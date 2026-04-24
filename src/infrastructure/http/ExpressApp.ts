@@ -1,8 +1,10 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import helmet from "helmet";
+import swaggerUi from "swagger-ui-express";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { requestLogger } from "./middleware/requestLogger.js";
+import { openApiDocument } from "./swagger/openapi.js";
 
 export function createExpressApp(): Express {
   const app = express();
@@ -12,6 +14,9 @@ export function createExpressApp(): Express {
   app.use(cors());
   app.use(express.json());
   app.use(requestLogger);
+
+  // ── API documentation ──────────────────────────────
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
 
   // ── Health check ────────────────────────────────────
   app.get("/health", (_req, res) => {

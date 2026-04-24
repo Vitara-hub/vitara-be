@@ -5,22 +5,19 @@
     "moduleResolution": "Node16",
     "lib": ["ES2022"],
     "outDir": "dist",
-    "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
+    "types": ["bun-types"],
     "baseUrl": ".",
     "paths": {
       "@core/*": ["src/core/*"],
       "@infrastructure/*": ["src/infrastructure/*"],
-      "@modules/*": ["src/modules/*"]
-    }
+      "@modules/*": ["src/modules/*"],
+    },
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": ["node_modules", "dist"],
 }
