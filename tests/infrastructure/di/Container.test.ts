@@ -11,7 +11,10 @@ mock.module("@supabase/supabase-js", () => ({
   }),
 }));
 
-import { createContainer, type Container } from "../../../src/infrastructure/di/Container.js";
+import {
+  createContainer,
+  type Container,
+} from "../../../src/infrastructure/di/Container.js";
 import type { Env } from "../../../src/infrastructure/config/env.js";
 
 describe("Container", () => {
@@ -21,6 +24,9 @@ describe("Container", () => {
     SUPABASE_URL: "https://test.supabase.co",
     SUPABASE_ANON_KEY: "test-anon-key",
     SUPABASE_SERVICE_ROLE_KEY: "test-service-role-key",
+    AI_SERVICE_BASE_URL: "http://localhost:8000",
+    AI_REQUEST_TIMEOUT_MS: 3000,
+    SUPABASE_FOOD_BUCKET: "food-images",
   };
 
   let container: Container;
