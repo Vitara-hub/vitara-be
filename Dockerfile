@@ -23,7 +23,7 @@ ENV NODE_ENV=production
 
 # Install production deps only
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile --production && \
+RUN bun install --frozen-lockfile --production --ignore-scripts && \
     rm -rf /tmp/* /root/.bun/install/cache
 
 # Copy compiled output
