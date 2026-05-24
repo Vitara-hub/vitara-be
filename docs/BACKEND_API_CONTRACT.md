@@ -1,22 +1,23 @@
-# Vitara Backend Gateway API Contract (Draft v1)
+# Vitara Backend Gateway API Contract
 
 ## Scope
 
-Dokumen ini untuk kontrak **Frontend <-> Backend Gateway** (`vitara-be`).
+Dokumen ini adalah kontrak **Frontend <-> Backend Gateway** (`vitara-be`).
 
-- AI model contract tetap di [api-contract.md](/home/alfazari/projects/kuliah/mbkm/codingcamp/capstone/vitara-be/docs/api-contract.md).
-- Backend gateway bertanggung jawab: auth verification, DB persistence, orchestration ke AI service, orchestration ke Gemini.
+- Backend base URL local: `http://localhost:3000`
+- Backend base path: `/api`
+- AI service contract: `/home/alfazari/projects/kuliah/mbkm/codingcamp/capstone/vitara-ai/vitara-ai-service/docs/api-contract.md`
+- Backend bertanggung jawab untuk auth verification, persistence ke Supabase, upload storage, dan orchestration ke AI service.
 
-## Base
+## Conventions
 
-- Base path: `/api`
-- Version: `/v1`
-- Auth: `Authorization: Bearer <supabase_access_token>`
-- Content-Type: `application/json` (kecuali upload image pakai `multipart/form-data`)
+- JSON request wajib memakai `Content-Type: application/json`.
+- Endpoint upload food image memakai `multipart/form-data`.
+- Endpoint protected wajib memakai `Authorization: Bearer <supabase_access_token>`.
+- Date-time memakai ISO 8601.
+- Semua response backend memakai envelope berikut.
 
-## Response Envelope
-
-### Success
+Success:
 
 ```json
 {
@@ -25,24 +26,51 @@ Dokumen ini untuk kontrak **Frontend <-> Backend Gateway** (`vitara-be`).
 }
 ```
 
-### Error
+Error:
 
 ```json
 {
   "status": "error",
-  "message": "Human readable message",
-  "code": "SOME_ERROR_CODE"
+  "message": "Human readable message"
 }
+```
+
+## Auth And Middleware
+
+- `authMiddleware` membaca Bearer token dari header `Authorization`.
+- Token diverifikasi lewat `supabaseAdmin.auth.getUser(token)`.
+- Jika valid, middleware set `req.userId = data.user.id`.
+- Jika header hilang, format salah, token invalid, atau token expired, backend mengembalikan `401`.
+- Route public: `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/google`, `POST /api/auth/google/callback`, `POST /api/auth/refresh`.
+- Route lain protected.
+
+Catatan implementasi: repository/controller saat ini memakai Supabase service-role client di backend dan melakukan scoping data dengan `user_id` dari token. RLS tetap didefinisikan di migration untuk akses client-side/anon flow.
+
+## AI Service Orchestration
+
+Backend mengirim `user_id` ke AI service memakai Supabase Auth user id.
+
+| Backend endpoint | AI endpoint | Status implementasi |
+|---|---|---|
+| `POST /api/journal/analyze` | `POST /predict/journal` | Memanggil AI service. Jika gagal/non-OK, fallback ke `neutral`, `stressLevel=0.5`, `topics=["general"]`. |
+| `POST /api/food/analyze-image` | `POST /predict/food` | Upload image ke Supabase Storage, memanggil AI service, lalu simpan hasil. Jika AI gagal, request gagal `502` dan upload dibersihkan. |
+| `POST /api/sleep/analyze` | `POST /predict/sleep` | Memanggil AI service. Jika gagal/non-OK, fallback deterministic local. |
+| `POST /api/typing/analyze` | `POST /predict/typing` | Memanggil AI service. Jika gagal/non-OK, fallback deterministic local. |
+| `POST /api/health/compute` | `POST /health/score` | Mengumpulkan input harian, memanggil AI service. Jika gagal/non-OK, fallback deterministic local. |
+| `POST /api/chat/messages` | `POST /companion/chat` | Memanggil AI companion SSE, membaca event `final.full_response`, lalu simpan sebagai assistant message. Jika gagal/non-OK, fallback local companion. |
+
+Environment terkait AI:
+
+```env
+AI_SERVICE_BASE_URL=http://localhost:8000
+AI_REQUEST_TIMEOUT_MS=8000
 ```
 
 ## Auth Endpoints
 
-Catatan: backend gateway menyediakan endpoint auth agar frontend punya satu pintu akses API.
-
 ### `POST /api/auth/signup`
 
-- Tujuan: daftar user baru (email/password) lalu bootstrap profile.
-- Auth: public
+Public. Membuat user Supabase Auth dan bootstrap profile.
 
 Request:
 
@@ -55,7 +83,7 @@ Request:
 }
 ```
 
-Response:
+Response `201`:
 
 ```json
 {
@@ -70,8 +98,7 @@ Response:
 
 ### `POST /api/auth/login`
 
-- Tujuan: login email/password melalui Supabase Auth.
-- Auth: public
+Public. Login email/password lewat Supabase Auth.
 
 Request:
 
@@ -97,8 +124,7 @@ Response:
 
 ### `POST /api/auth/google`
 
-- Tujuan: generate URL OAuth Google dari Supabase.
-- Auth: public
+Public. Generate URL OAuth Google dari Supabase.
 
 Response:
 
@@ -111,15 +137,59 @@ Response:
 }
 ```
 
+### `POST /api/auth/google/callback`
+
+Public. Selesaikan OAuth Google di server (frontend tidak memanggil Supabase langsung).
+
+Request (PKCE):
+
+```json
+{
+  "code": "oauth-authorization-code"
+}
+```
+
+Request (implicit hash fallback):
+
+```json
+{
+  "accessToken": "jwt",
+  "refreshToken": "refresh-token"
+}
+```
+
+Response: sama seperti `POST /api/auth/login`.
+
+### `POST /api/auth/refresh`
+
+Public. Perpanjang access token.
+
+Request:
+
+```json
+{
+  "refreshToken": "refresh-token"
+}
+```
+
+Response: sama seperti `POST /api/auth/login`.
+
 ### `POST /api/auth/logout`
 
-- Tujuan: logout user dan revoke session.
-- Auth: required
+Protected. Revoke session token saat ini.
+
+Response:
+
+```json
+{
+  "status": "success",
+  "data": {}
+}
+```
 
 ### `GET /api/auth/me`
 
-- Tujuan: validasi token + ambil user profile ringkas.
-- Auth: required
+Protected. Ambil profile ringkas user.
 
 Response:
 
@@ -136,45 +206,26 @@ Response:
 }
 ```
 
-## Home / Dashboard
-
-### `GET /api/dashboard/today`
-
-- Tujuan: data komposit untuk layar Home/Dashboard.
-- Auth: required
-
-Response:
-
-```json
-{
-  "status": "success",
-  "data": {
-    "dateLabel": "Senin, 4 Mei",
-    "healthScore": 85,
-    "statusLabel": "Sehat & Senang",
-    "suggestion": "Vee kelihatan sangat sehat hari ini! Terus pertahankan rutinitas baikmu.",
-    "breakdown": {
-      "moodLabel": "Tenang",
-      "stressLabel": "Rendah",
-      "nutritionKcal": 520,
-      "sleepHours": 7.5
-    }
-  }
-}
-```
-
 ## Journal / Mental
 
 ### `POST /api/journal/analyze`
 
-- Tujuan: submit teks jurnal, simpan hasil, trigger AI `POST /predict/journal`.
-- Auth: required
+Protected. Submit teks jurnal, panggil AI `/predict/journal`, simpan hasil sebagai journal row di `typing_sessions` dengan `duration = 0`.
 
-Request:
+AI request yang dikirim backend:
 
 ```json
 {
-  "text": "Apa yang ngeganjel di pikiranmu hari ini..."
+  "text": "Hari ini aku merasa sangat lelah dan tertekan karena deadline.",
+  "user_id": "supabase-user-uuid"
+}
+```
+
+Frontend request:
+
+```json
+{
+  "text": "Hari ini aku merasa sangat lelah dan tertekan karena deadline."
 }
 ```
 
@@ -195,16 +246,39 @@ Response:
 
 ### `GET /api/journal`
 
-- Tujuan: list riwayat jurnal.
-- Auth: required
-- Query: `limit`, `cursor` (optional)
+Protected. List journal logs.
+
+Query:
+
+- `limit`: optional, default `20`, max `100`
+- `cursor`: optional ISO date-time
+
+Response:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "items": [
+      {
+        "id": "uuid",
+        "text": "Journal text",
+        "emotion": "neutral",
+        "stressLevel": 0.5,
+        "topics": ["general"],
+        "createdAt": "2026-05-08T13:00:00.000Z"
+      }
+    ],
+    "nextCursor": null
+  }
+}
+```
 
 ## Nutrition
 
 ### `POST /api/food`
 
-- Tujuan: create manual food log.
-- Auth: required
+Protected. Create manual food log.
 
 Request:
 
@@ -219,12 +293,41 @@ Request:
 }
 ```
 
+Response `201`:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "uuid",
+    "name": "Nasi Goreng",
+    "calories": 520,
+    "protein": 18,
+    "carbs": 62,
+    "fat": 20,
+    "source": "manual",
+    "consumedAt": "2026-05-08T12:30:00.000Z",
+    "createdAt": "2026-05-08T12:31:00.000Z",
+    "imageUrl": null,
+    "imagePath": null
+  }
+}
+```
+
 ### `POST /api/food/analyze-image`
 
-- Tujuan: upload foto makanan lalu gateway panggil AI `POST /predict/food`.
-- Auth: required
-- Content-Type: `multipart/form-data`
-- Field: `image`
+Protected. Upload foto makanan, simpan ke Supabase Storage bucket `food-images`, panggil AI `/predict/food`, lalu simpan hasil ke `food_entries`.
+
+Content-Type: `multipart/form-data`
+
+Fields:
+
+- `image`: required file, JPEG/PNG, max 5MB
+
+AI form-data yang dikirim backend:
+
+- `image`: uploaded image
+- `user_id`: Supabase user id
 
 Response:
 
@@ -242,18 +345,35 @@ Response:
 
 ### `GET /api/food`
 
-- Tujuan: list food logs.
-- Auth: required
-- Query: `date`, `mealType`, `limit`, `cursor` (optional)
+Protected. List food logs.
+
+Query:
+
+- `date`: optional `YYYY-MM-DD`
+- `mealType`: optional, currently accepted but not applied by implementation
+- `limit`: optional, default `20`, max `100`
+- `cursor`: optional ISO date-time
 
 ## Sleep
 
 ### `POST /api/sleep/analyze`
 
-- Tujuan: submit sleep form, trigger AI `POST /predict/sleep`, simpan hasil.
-- Auth: required
+Protected. Submit sleep form, derive duration/debt, panggil AI `/predict/sleep`, lalu simpan hasil.
 
-Request:
+AI request yang dikirim backend:
+
+```json
+{
+  "duration_hours": 7.5,
+  "bedtime": "23:00",
+  "wake_time": "06:30",
+  "interruptions": 0,
+  "sleep_debt_hours": 0,
+  "user_id": "supabase-user-uuid"
+}
+```
+
+Frontend request:
 
 ```json
 {
@@ -279,18 +399,32 @@ Response:
 
 ### `GET /api/sleep`
 
-- Tujuan: list sleep logs.
-- Auth: required
-- Query: `date`, `limit`, `cursor` (optional)
+Protected. List sleep logs.
+
+Query:
+
+- `date`: optional `YYYY-MM-DD`
+- `limit`: optional, default `20`, max `100`
+- `cursor`: optional ISO date-time
 
 ## Typing Stress
 
 ### `POST /api/typing/analyze`
 
-- Tujuan: kirim telemetry typing + trigger AI `POST /predict/typing`.
-- Auth: required
+Protected. Kirim telemetry typing, panggil AI `/predict/typing`, lalu simpan hasil.
 
-Request:
+AI request yang dikirim backend:
+
+```json
+{
+  "wpm": 58.3,
+  "backspace_rate": 0.12,
+  "inter_key_timings": [120, 98, 145],
+  "user_id": "supabase-user-uuid"
+}
+```
+
+Frontend request:
 
 ```json
 {
@@ -316,51 +450,165 @@ Response:
 
 ### `GET /api/typing`
 
-- Tujuan: list typing sessions.
-- Auth: required
-- Query: `date`, `limit`, `cursor` (optional)
+Protected. List typing sessions.
+
+Query:
+
+- `date`: optional `YYYY-MM-DD`
+- `limit`: optional, default `20`, max `100`
+- `cursor`: optional ISO date-time
 
 ## Health Score / Activity
 
 ### `POST /api/health/compute`
 
-- Tujuan: hitung skor harian via AI `POST /health/score`, simpan snapshot.
-- Auth: required
+Protected. Ambil input harian dari DB, panggil AI `/health/score`, simpan/upsert snapshot hari ini.
+
+AI request yang dikirim backend:
+
+```json
+{
+  "user_id": "supabase-user-uuid",
+  "nlp_result": {
+    "emotion": "anxious",
+    "stress_level": 0.82
+  },
+  "food_result": {
+    "estimated_calories": 520
+  },
+  "sleep_result": {
+    "quality_score": 72
+  },
+  "typing_result": {
+    "stress_score": 0.74
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "snapshotDate": "2026-05-24",
+    "healthScore": 78,
+    "breakdown": {
+      "mood": 70,
+      "nutrition": 85,
+      "sleep": 72,
+      "stress": 65
+    },
+    "insightSummary": "Pertahankan rutinitas baikmu."
+  }
+}
+```
 
 ### `GET /api/health/daily`
 
-- Tujuan: ambil snapshot health harian.
-- Auth: required
-- Query: `from`, `to`
+Protected. Ambil snapshot health harian.
+
+Query:
+
+- `from`: optional `YYYY-MM-DD`, default 6 hari sebelum hari ini
+- `to`: optional `YYYY-MM-DD`, default hari ini
+
+### `GET /api/dashboard/today`
+
+Protected. Data komposit untuk Home/Dashboard. Jika snapshot hari ini belum ada, backend akan compute dulu.
+
+Response:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "dateLabel": "Minggu, 24 Mei",
+    "healthScore": 85,
+    "statusLabel": "Sehat & Senang",
+    "suggestion": "Pertahankan rutinitas baikmu.",
+    "breakdown": {
+      "moodLabel": "Tenang",
+      "stressLabel": "Rendah",
+      "nutritionKcal": 520,
+      "sleepHours": 7.5
+    }
+  }
+}
+```
 
 ### `GET /api/activity/summary`
 
-- Tujuan: data rata-rata skor + statistik minggu untuk layar Activity.
-- Auth: required
-- Query: `period=7d|30d`
+Protected. Rata-rata skor dan statistik ringkas.
+
+Query:
+
+- `period`: optional `7d` atau `30d`, default `7d`
 
 ### `GET /api/activity/recent`
 
-- Tujuan: list riwayat aktivitas gabungan (journal/sleep/nutrition/stress).
-- Auth: required
-- Query: `limit`, `cursor`
+Protected. Gabungan riwayat food, sleep, typing, journal.
+
+Query:
+
+- `limit`: optional, default `20`, max `100`
+- `cursor`: optional ISO date-time
 
 ## Chat Companion
 
 ### `POST /api/chat/sessions`
 
-- Tujuan: buat session chat.
-- Auth: required
+Protected. Buat session chat.
+
+Request:
+
+```json
+{
+  "title": "Evening check-in"
+}
+```
+
+Response `201`:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "uuid",
+    "title": "Evening check-in",
+    "summary": null,
+    "lastMessageAt": null,
+    "createdAt": "2026-05-08T13:00:00.000Z"
+  }
+}
+```
 
 ### `GET /api/chat/sessions`
 
-- Tujuan: list session chat user.
-- Auth: required
+Protected. List chat sessions.
+
+Query:
+
+- `limit`: optional, default `20`, max `100`
+- `cursor`: optional ISO date-time
 
 ### `POST /api/chat/messages`
 
-- Tujuan: kirim pesan user, gateway panggil Gemini, simpan user+assistant message.
-- Auth: required
+Protected. Kirim pesan user, gateway memanggil AI service `POST /companion/chat`, membaca response SSE, lalu simpan user + assistant message. Jika AI companion gagal, backend memakai fallback local companion.
+
+AI request yang dikirim backend:
+
+```json
+{
+  "user_id": "supabase-user-uuid",
+  "message": "Aku lagi capek, harus ngapain?"
+}
+```
+
+AI response yang dibaca backend:
+
+- `event: delta` dengan `data: {"token":"..."}`
+- `event: final` dengan `data: {"full_response":"...","recommendations":[...]}`
 
 Request:
 
@@ -378,33 +626,34 @@ Response:
   "status": "success",
   "data": {
     "sessionId": "uuid",
-    "assistantMessage": "Aku denger kamu lagi capek. Coba tarik napas perlahan..."
+    "assistantMessage": "Aku dengar kamu lagi capek..."
   }
 }
 ```
 
 ### `GET /api/chat/messages`
 
-- Tujuan: ambil history chat.
-- Auth: required
-- Query: `sessionId`, `limit`, `cursor`
+Protected. Ambil history chat.
+
+Query:
+
+- `sessionId`: required UUID
+- `limit`: optional, default `20`, max `100`
+- `cursor`: optional ISO date-time
 
 ## Profile
 
 ### `GET /api/profile`
 
-- Tujuan: ambil profil user + status ringkas.
-- Auth: required
+Protected. Ambil profil user.
 
 ### `POST /api/profile/bootstrap`
 
-- Tujuan: memastikan profile user sudah ada setelah login/register (idempotent).
-- Auth: required
+Protected. Memastikan profile user sudah ada setelah login/register. Idempotent.
 
 ### `PATCH /api/profile`
 
-- Tujuan: update profil user.
-- Auth: required
+Protected. Update profile.
 
 Request:
 
@@ -418,11 +667,12 @@ Request:
 
 ### `POST /api/profile/request-delete`
 
-- Tujuan: ajukan penghapusan data user.
-- Auth: required
+Protected. Ajukan penghapusan data user.
+
+Request:
 
 ```json
 {
-    "requestDelete": true
+  "requestDelete": true
 }
 ```

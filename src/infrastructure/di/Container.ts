@@ -1,80 +1,63 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Env } from "../config/env.js";
 import { getSupabaseAdmin } from "../database/SupabaseClient.js";
+import { AiGatewayClient } from "../ai/AiGatewayClient.js";
 
-// ── Repository imports ────────────────────────────────
-import { SupabaseFoodRepository } from "../../modules/food/infrastructure/repositories/SupabaseFoodRepository.js";
-import { SupabaseSleepRepository } from "../../modules/sleep/infrastructure/repositories/SupabaseSleepRepository.js";
-import { SupabaseTypingRepository } from "../../modules/typing/infrastructure/repositories/SupabaseTypingRepository.js";
-import { SupabaseChatRepository } from "../../modules/chat/infrastructure/repositories/SupabaseChatRepository.js";
-
-// ── Use-case imports ──────────────────────────────────
-import { CreateFoodEntry } from "../../modules/food/application/use-cases/CreateFoodEntry.js";
-import { GetFoodEntries } from "../../modules/food/application/use-cases/GetFoodEntries.js";
-import { CreateSleepEntry } from "../../modules/sleep/application/use-cases/CreateSleepEntry.js";
-import { GetSleepEntries } from "../../modules/sleep/application/use-cases/GetSleepEntries.js";
-import { CreateTypingSession } from "../../modules/typing/application/use-cases/CreateTypingSession.js";
-import { GetTypingSessions } from "../../modules/typing/application/use-cases/GetTypingSessions.js";
-import { SendMessage } from "../../modules/chat/application/use-cases/SendMessage.js";
-import { GetChatHistory } from "../../modules/chat/application/use-cases/GetChatHistory.js";
-
-// ── Controller imports ────────────────────────────────
+import { AuthController } from "../../modules/auth/infrastructure/controllers/AuthController.js";
+import { ProfileController } from "../../modules/profile/infrastructure/controllers/ProfileController.js";
 import { FoodController } from "../../modules/food/infrastructure/controllers/FoodController.js";
 import { SleepController } from "../../modules/sleep/infrastructure/controllers/SleepController.js";
 import { TypingController } from "../../modules/typing/infrastructure/controllers/TypingController.js";
 import { ChatController } from "../../modules/chat/infrastructure/controllers/ChatController.js";
+import { HealthSnapshotService } from "../../modules/health/application/services/HealthSnapshotService.js";
+import { HealthController } from "../../modules/health/infrastructure/controllers/HealthController.js";
 
 export interface Container {
   env: Env;
   supabaseAdmin: SupabaseClient;
 
-  // Controllers (public surface used by routes)
+  authController: AuthController;
+  profileController: ProfileController;
   foodController: FoodController;
   sleepController: SleepController;
   typingController: TypingController;
   chatController: ChatController;
+  healthController: HealthController;
 }
 
 export function createContainer(env: Env): Container {
   const supabaseAdmin = getSupabaseAdmin(env);
+  const aiGatewayClient = new AiGatewayClient(env);
 
-  // ── Repositories ──────────────────────────────────
-  const foodRepo = new SupabaseFoodRepository(supabaseAdmin);
-  const sleepRepo = new SupabaseSleepRepository(supabaseAdmin);
-  const typingRepo = new SupabaseTypingRepository(supabaseAdmin);
-  const chatRepo = new SupabaseChatRepository(supabaseAdmin);
-
-  // ── Use cases ─────────────────────────────────────
-  const createFoodEntry = new CreateFoodEntry(foodRepo);
-  const getFoodEntries = new GetFoodEntries(foodRepo);
-
-  const createSleepEntry = new CreateSleepEntry(sleepRepo);
-  const getSleepEntries = new GetSleepEntries(sleepRepo);
-
-  const createTypingSession = new CreateTypingSession(typingRepo);
-  const getTypingSessions = new GetTypingSessions(typingRepo);
-
-  const sendMessage = new SendMessage(chatRepo);
-  const getChatHistory = new GetChatHistory(chatRepo);
-
-  // ── Controllers ───────────────────────────────────
-  const foodController = new FoodController(createFoodEntry, getFoodEntries);
-  const sleepController = new SleepController(
-    createSleepEntry,
-    getSleepEntries,
+  const authController = new AuthController(env, supabaseAdmin);
+  const profileController = new ProfileController(supabaseAdmin);
+  const foodController = new FoodController(
+    env,
+    supabaseAdmin,
+    aiGatewayClient,
   );
-  const typingController = new TypingController(
-    createTypingSession,
-    getTypingSessions,
+  const sleepController = new SleepController(supabaseAdmin, aiGatewayClient);
+  const typingController = new TypingController(supabaseAdmin, aiGatewayClient);
+  const chatController = new ChatController(supabaseAdmin, aiGatewayClient);
+
+  const healthSnapshotService = new HealthSnapshotService(
+    supabaseAdmin,
+    aiGatewayClient,
   );
-  const chatController = new ChatController(sendMessage, getChatHistory);
+  const healthController = new HealthController(
+    supabaseAdmin,
+    healthSnapshotService,
+  );
 
   return {
     env,
     supabaseAdmin,
+    authController,
+    profileController,
     foodController,
     sleepController,
     typingController,
     chatController,
+    healthController,
   };
 }
