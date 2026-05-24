@@ -9,6 +9,7 @@ import {
   parseValidationError,
   requireUserId,
 } from "../../../shared/infrastructure/utils/requestUtils.js";
+import type { AiGatewayClient } from "../../../../infrastructure/ai/AiGatewayClient.js";
 import {
   chatMessagesQuerySchema,
   chatSessionsQuerySchema,
@@ -31,7 +32,10 @@ function createCompanionResponse(message: string): string {
 }
 
 export class ChatController {
-  constructor(private readonly supabase: SupabaseClient) {}
+  constructor(
+    private readonly supabase: SupabaseClient,
+    private readonly aiClient: AiGatewayClient,
+  ) {}
 
   createSession = async (
     req: Request,
@@ -180,7 +184,19 @@ export class ChatController {
         );
       }
 
-      const assistantMessage = createCompanionResponse(parsed.data.message);
+      let assistantMessage: string;
+      let assistantModel = "vitara-ai-companion";
+
+      try {
+        const companionResult = await this.aiClient.chatCompanion(
+          parsed.data.message,
+          userId,
+        );
+        assistantMessage = companionResult.response;
+      } catch {
+        assistantMessage = createCompanionResponse(parsed.data.message);
+        assistantModel = "local-companion-fallback";
+      }
 
       const { error: assistantError } = await this.supabase
         .from("chat_messages")
@@ -189,7 +205,7 @@ export class ChatController {
           session_id: parsed.data.sessionId,
           role: "assistant",
           content: assistantMessage,
-          model: "mock-companion-v1",
+          model: assistantModel,
         });
 
       if (assistantError) {

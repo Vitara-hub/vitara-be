@@ -63,11 +63,14 @@ export class TypingController {
         throw new BadRequestError(parseValidationError(parsed.error));
       }
 
-      const prediction = this.aiClient.predictTyping({
-        wpm: parsed.data.wpm,
-        backspaceRate: parsed.data.backspaceRate,
-        interKeyTimings: parsed.data.interKeyTimings,
-      });
+      const prediction = await this.aiClient.predictTyping(
+        {
+          wpm: parsed.data.wpm,
+          backspaceRate: parsed.data.backspaceRate,
+          interKeyTimings: parsed.data.interKeyTimings,
+        },
+        userId,
+      );
 
       const { data, error } = await this.supabase
         .from("typing_sessions")
@@ -191,7 +194,10 @@ export class TypingController {
         throw new BadRequestError(parseValidationError(parsed.error));
       }
 
-      const prediction = await this.aiClient.predictJournal(parsed.data.text);
+      const prediction = await this.aiClient.predictJournal(
+        parsed.data.text,
+        userId,
+      );
 
       // Journal data disimpan di typing_sessions agar tetap di existing module.
       const { data, error } = await this.supabase

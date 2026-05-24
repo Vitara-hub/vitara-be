@@ -53,6 +53,11 @@ export interface HealthComputationResult {
   };
 }
 
+export interface CompanionChatResult {
+  response: string;
+  recommendations: string[];
+}
+
 const DEFAULT_JOURNAL_PREDICTION: JournalPrediction = {
   emotion: "neutral",
   stressLevel: 0.5,
@@ -100,6 +105,85 @@ function caloriesToNutritionScore(calories: number): number {
   return Math.round(45 + normalized * 55);
 }
 
+function calculateSleepFallback(input: SleepPredictionInput): SleepPrediction {
+  const base = 70;
+  const durationBoost = clamp((input.durationHours - 7) * 8, -20, 15);
+  const interruptionsPenalty = clamp(input.interruptions * 8, 0, 30);
+  const debtPenalty = clamp(input.sleepDebtHours * 10, 0, 30);
+
+  const qualityScore = clamp(
+    Math.round(base + durationBoost - interruptionsPenalty - debtPenalty),
+    0,
+    100,
+  );
+
+  return { qualityScore };
+}
+
+function calculateTypingFallback(input: TypingPredictionInput): TypingPrediction {
+  const wpmRisk = clamp((55 - input.wpm) / 55, 0, 1);
+  const backspaceRisk = clamp(input.backspaceRate, 0, 1);
+  const interKeyStdDev = calculateStdDev(input.interKeyTimings);
+  const rhythmRisk = clamp(interKeyStdDev / 300, 0, 1);
+
+  const stressScore = clamp(
+    0.2 + wpmRisk * 0.25 + backspaceRisk * 0.4 + rhythmRisk * 0.25,
+    0,
+    1,
+  );
+
+  return {
+    stressScore: roundTo2(stressScore),
+  };
+}
+
+function calculateHealthFallback(
+  input: HealthComputationInput,
+): HealthComputationResult {
+  const mood = emotionToMoodScore(input.emotion);
+  const nutrition = caloriesToNutritionScore(input.nutritionCalories);
+
+  const stressBlend = clamp(
+    (input.journalStressLevel + input.typingStressScore) / 2,
+    0,
+    1,
+  );
+  const stress = clamp(Math.round((1 - stressBlend) * 100), 0, 100);
+  const sleep = clamp(Math.round(input.sleepQualityScore), 0, 100);
+
+  const healthScore = Math.round((mood + nutrition + stress + sleep) / 4);
+
+  return {
+    healthScore,
+    breakdown: {
+      mood,
+      nutrition,
+      stress,
+      sleep,
+    },
+  };
+}
+
+function parseSseDataEvents(raw: string): Array<Record<string, unknown>> {
+  return raw
+    .split(/\n\n+/)
+    .map((eventBlock) => {
+      const dataLines = eventBlock
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim());
+
+      if (dataLines.length === 0) return null;
+
+      try {
+        return JSON.parse(dataLines.join("\n")) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    })
+    .filter((event): event is Record<string, unknown> => event !== null);
+}
+
 export class AiGatewayClient {
   private readonly logger = new Logger("AiGatewayClient");
 
@@ -131,7 +215,7 @@ export class AiGatewayClient {
     }
   }
 
-  async predictJournal(text: string): Promise<JournalPrediction> {
+  async predictJournal(text: string, userId: string): Promise<JournalPrediction> {
     const endpoint = `${this.env.AI_SERVICE_BASE_URL}/predict/journal`;
 
     try {
@@ -140,7 +224,7 @@ export class AiGatewayClient {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, user_id: userId }),
       });
 
       if (!response.ok) {
@@ -186,11 +270,13 @@ export class AiGatewayClient {
     imageBuffer: Uint8Array,
     filename: string,
     mimeType: string,
+    userId: string,
   ): Promise<FoodPrediction> {
     const endpoint = `${this.env.AI_SERVICE_BASE_URL}/predict/food`;
     const formData = new FormData();
     const blob = new Blob([imageBuffer], { type: mimeType });
     formData.append("image", blob, filename);
+    formData.append("user_id", userId);
 
     const response = await this.fetchWithTimeout(endpoint, {
       method: "POST",
@@ -225,62 +311,237 @@ export class AiGatewayClient {
     };
   }
 
-  predictSleep(input: SleepPredictionInput): SleepPrediction {
-    // Mock deterministic scoring sementara endpoint AI sleep belum tersedia.
-    const base = 70;
-    const durationBoost = clamp((input.durationHours - 7) * 8, -20, 15);
-    const interruptionsPenalty = clamp(input.interruptions * 8, 0, 30);
-    const debtPenalty = clamp(input.sleepDebtHours * 10, 0, 30);
+  async predictSleep(
+    input: SleepPredictionInput,
+    userId: string,
+  ): Promise<SleepPrediction> {
+    const endpoint = `${this.env.AI_SERVICE_BASE_URL}/predict/sleep`;
 
-    const qualityScore = clamp(
-      Math.round(base + durationBoost - interruptionsPenalty - debtPenalty),
-      0,
-      100,
-    );
+    try {
+      const response = await this.fetchWithTimeout(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          duration_hours: input.durationHours,
+          bedtime: input.bedtime,
+          wake_time: input.wakeTime,
+          interruptions: input.interruptions,
+          sleep_debt_hours: input.sleepDebtHours,
+          user_id: userId,
+        }),
+      });
 
-    return { qualityScore };
+      if (!response.ok) {
+        this.logger.warn("Sleep AI returned non-OK response. Falling back.", {
+          status: response.status,
+        });
+        return calculateSleepFallback(input);
+      }
+
+      const payload = (await response.json()) as Record<string, unknown>;
+      const qualityScoreRaw =
+        typeof payload.quality_score === "number" ? payload.quality_score : NaN;
+
+      if (!Number.isFinite(qualityScoreRaw)) {
+        throw new AppError("Sleep AI response is invalid", 502);
+      }
+
+      return {
+        qualityScore: clamp(Math.round(qualityScoreRaw), 0, 100),
+      };
+    } catch (err) {
+      this.logger.warn("Sleep AI request failed. Falling back.", {
+        error: err instanceof Error ? err.message : "unknown",
+      });
+
+      return calculateSleepFallback(input);
+    }
   }
 
-  predictTyping(input: TypingPredictionInput): TypingPrediction {
-    // Mock deterministic scoring sementara endpoint AI typing belum tersedia.
-    const wpmRisk = clamp((55 - input.wpm) / 55, 0, 1);
-    const backspaceRisk = clamp(input.backspaceRate, 0, 1);
-    const interKeyStdDev = calculateStdDev(input.interKeyTimings);
-    const rhythmRisk = clamp(interKeyStdDev / 300, 0, 1);
+  async predictTyping(
+    input: TypingPredictionInput,
+    userId: string,
+  ): Promise<TypingPrediction> {
+    const endpoint = `${this.env.AI_SERVICE_BASE_URL}/predict/typing`;
 
-    const stressScore = clamp(
-      0.2 + wpmRisk * 0.25 + backspaceRisk * 0.4 + rhythmRisk * 0.25,
-      0,
-      1,
-    );
+    try {
+      const response = await this.fetchWithTimeout(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          wpm: input.wpm,
+          backspace_rate: input.backspaceRate,
+          inter_key_timings: input.interKeyTimings,
+          user_id: userId,
+        }),
+      });
 
-    return {
-      stressScore: roundTo2(stressScore),
-    };
+      if (!response.ok) {
+        this.logger.warn("Typing AI returned non-OK response. Falling back.", {
+          status: response.status,
+        });
+        return calculateTypingFallback(input);
+      }
+
+      const payload = (await response.json()) as Record<string, unknown>;
+      const stressScoreRaw =
+        typeof payload.stress_score === "number" ? payload.stress_score : NaN;
+
+      if (!Number.isFinite(stressScoreRaw)) {
+        throw new AppError("Typing AI response is invalid", 502);
+      }
+
+      return {
+        stressScore: roundTo2(clamp(stressScoreRaw, 0, 1)),
+      };
+    } catch (err) {
+      this.logger.warn("Typing AI request failed. Falling back.", {
+        error: err instanceof Error ? err.message : "unknown",
+      });
+
+      return calculateTypingFallback(input);
+    }
   }
 
-  computeHealthScore(input: HealthComputationInput): HealthComputationResult {
-    const mood = emotionToMoodScore(input.emotion);
-    const nutrition = caloriesToNutritionScore(input.nutritionCalories);
+  async computeHealthScore(
+    input: HealthComputationInput,
+    userId: string,
+  ): Promise<HealthComputationResult> {
+    const endpoint = `${this.env.AI_SERVICE_BASE_URL}/health/score`;
 
-    const stressBlend = clamp(
-      (input.journalStressLevel + input.typingStressScore) / 2,
-      0,
-      1,
-    );
-    const stress = clamp(Math.round((1 - stressBlend) * 100), 0, 100);
-    const sleep = clamp(Math.round(input.sleepQualityScore), 0, 100);
+    try {
+      const response = await this.fetchWithTimeout(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          nlp_result: {
+            emotion: input.emotion,
+            stress_level: input.journalStressLevel,
+          },
+          food_result: {
+            estimated_calories: input.nutritionCalories,
+          },
+          sleep_result: {
+            quality_score: input.sleepQualityScore,
+          },
+          typing_result: {
+            stress_score: input.typingStressScore,
+          },
+        }),
+      });
 
-    const healthScore = Math.round((mood + nutrition + stress + sleep) / 4);
+      if (!response.ok) {
+        this.logger.warn("Health AI returned non-OK response. Falling back.", {
+          status: response.status,
+        });
+        return calculateHealthFallback(input);
+      }
 
-    return {
-      healthScore,
-      breakdown: {
-        mood,
-        nutrition,
-        stress,
-        sleep,
+      const payload = (await response.json()) as Record<string, unknown>;
+      const breakdown =
+        payload.breakdown &&
+        typeof payload.breakdown === "object" &&
+        !Array.isArray(payload.breakdown)
+          ? (payload.breakdown as Record<string, unknown>)
+          : {};
+
+      const healthScoreRaw =
+        typeof payload.health_score === "number" ? payload.health_score : NaN;
+      const moodRaw = typeof breakdown.mood === "number" ? breakdown.mood : NaN;
+      const nutritionRaw =
+        typeof breakdown.nutrition === "number" ? breakdown.nutrition : NaN;
+      const stressRaw =
+        typeof breakdown.stress === "number" ? breakdown.stress : NaN;
+      const sleepRaw =
+        typeof breakdown.sleep === "number" ? breakdown.sleep : NaN;
+
+      if (
+        ![
+          healthScoreRaw,
+          moodRaw,
+          nutritionRaw,
+          stressRaw,
+          sleepRaw,
+        ].every(Number.isFinite)
+      ) {
+        throw new AppError("Health AI response is invalid", 502);
+      }
+
+      return {
+        healthScore: clamp(Math.round(healthScoreRaw), 0, 100),
+        breakdown: {
+          mood: clamp(Math.round(moodRaw), 0, 100),
+          nutrition: clamp(Math.round(nutritionRaw), 0, 100),
+          stress: clamp(Math.round(stressRaw), 0, 100),
+          sleep: clamp(Math.round(sleepRaw), 0, 100),
+        },
+      };
+    } catch (err) {
+      this.logger.warn("Health AI request failed. Falling back.", {
+        error: err instanceof Error ? err.message : "unknown",
+      });
+
+      return calculateHealthFallback(input);
+    }
+  }
+
+  async chatCompanion(
+    message: string,
+    userId: string,
+  ): Promise<CompanionChatResult> {
+    const endpoint = `${this.env.AI_SERVICE_BASE_URL}/companion/chat`;
+
+    const response = await this.fetchWithTimeout(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
       },
+      body: JSON.stringify({
+        user_id: userId,
+        message,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new AppError("Companion AI service is unavailable", 502);
+    }
+
+    const raw = await response.text();
+    const events = parseSseDataEvents(raw);
+    const finalEvent = events.find(
+      (event) => typeof event.full_response === "string",
+    );
+    const deltaText = events
+      .map((event) => (typeof event.token === "string" ? event.token : ""))
+      .join("");
+
+    const fullResponse =
+      finalEvent && typeof finalEvent.full_response === "string"
+        ? finalEvent.full_response
+        : deltaText;
+
+    const recommendations =
+      finalEvent && Array.isArray(finalEvent.recommendations)
+        ? finalEvent.recommendations.filter(
+            (item): item is string => typeof item === "string" && item.length > 0,
+          )
+        : [];
+
+    if (fullResponse.length === 0) {
+      throw new AppError("Companion AI response is invalid", 502);
+    }
+
+    return {
+      response: fullResponse,
+      recommendations,
     };
   }
 }

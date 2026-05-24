@@ -43,13 +43,15 @@ Menganalisis teks jurnal pengguna untuk mendeteksi emosi dan tingkat stres.
 
 ```json
 {
-  "text": "Hari ini aku merasa sangat lelah dan tertekan karena deadline pekerjaan yang menumpuk."
+  "text": "Hari ini aku merasa sangat lelah dan tertekan karena deadline pekerjaan yang menumpuk.",
+  "user_id": "usr_abc123"
 }
 ```
 
 | Field | Type | Required | Keterangan |
 |-------|------|----------|-----------|
 | `text` | `string` | ✅ | Teks jurnal pengguna. Min 10 karakter. |
+| `user_id` | `string` | ❌ | ID unik pengguna untuk menyimpan riwayat kesehatan RAG. |
 
 **Response `200 OK`:**
 
@@ -78,6 +80,7 @@ Mengenali jenis makanan dari gambar dan mengestimasi kalori.
 | Field | Type | Required | Keterangan |
 |-------|------|----------|-----------|
 | `image` | `file` | ✅ | File gambar (JPEG/PNG). Max 5MB. |
+| `user_id` | `string` | ❌ | ID unik pengguna untuk menyimpan riwayat kesehatan RAG. |
 
 **Response `200 OK`:**
 
@@ -107,7 +110,8 @@ Menghitung skor kualitas tidur pengguna berdasarkan data tidur.
   "bedtime": "00:30",
   "wake_time": "06:00",
   "interruptions": 3,
-  "sleep_debt_hours": 2.0
+  "sleep_debt_hours": 2.0,
+  "user_id": "usr_abc123"
 }
 ```
 
@@ -118,6 +122,7 @@ Menghitung skor kualitas tidur pengguna berdasarkan data tidur.
 | `wake_time` | `string` | ✅ | Waktu bangun, format `HH:MM` |
 | `interruptions` | `integer` | ✅ | Jumlah kali terbangun di malam hari |
 | `sleep_debt_hours` | `float` | ❌ | Akumulasi utang tidur dalam jam |
+| `user_id` | `string` | ❌ | ID unik pengguna untuk menyimpan riwayat kesehatan RAG. |
 
 **Response `200 OK`:**
 
@@ -143,7 +148,8 @@ Mendeteksi tingkat stres berdasarkan pola pengetikan (keystroke dynamics).
 {
   "wpm": 58.3,
   "backspace_rate": 0.12,
-  "inter_key_timings": [120, 98, 145, 87, 203, 110]
+  "inter_key_timings": [120, 98, 145, 87, 203, 110],
+  "user_id": "usr_abc123"
 }
 ```
 
@@ -152,6 +158,7 @@ Mendeteksi tingkat stres berdasarkan pola pengetikan (keystroke dynamics).
 | `wpm` | `float` | ✅ | Kecepatan mengetik dalam kata per menit |
 | `backspace_rate` | `float` | ✅ | Rasio tombol backspace terhadap total penekanan tombol (0.0 – 1.0) |
 | `inter_key_timings` | `float[]` | ✅ | Array interval waktu antar tombol dalam milidetik |
+| `user_id` | `string` | ❌ | ID unik pengguna untuk menyimpan riwayat kesehatan RAG. |
 
 **Response `200 OK`:**
 
@@ -169,9 +176,9 @@ Mendeteksi tingkat stres berdasarkan pola pengetikan (keystroke dynamics).
 
 ### 5. `POST /health/score`
 
-Menghitung skor kesehatan holistik pengguna berdasarkan output dari semua model.
+Menghitung skor kesehatan holistik pengguna berdasarkan sub-hasil analisis yang tersedia (Mendukung data aktivitas parsial dengan pembobotan dinamis secara asinkron).
 
-**Request Body:**
+**Request Body (Lengkap):**
 
 ```json
 {
@@ -192,15 +199,27 @@ Menghitung skor kesehatan holistik pengguna berdasarkan output dari semua model.
 }
 ```
 
+**Request Body (Parsial - Contoh hanya Mood):**
+
+```json
+{
+  "user_id": "usr_abc123",
+  "nlp_result": {
+    "emotion": "happy",
+    "stress_level": 0.20
+  }
+}
+```
+
 | Field | Type | Required | Keterangan |
 |-------|------|----------|-----------|
 | `user_id` | `string` | ✅ | ID unik pengguna |
-| `nlp_result` | `object` | ✅ | Output dari `/predict/journal` |
-| `food_result` | `object` | ✅ | Output dari `/predict/food` |
-| `sleep_result` | `object` | ✅ | Output dari `/predict/sleep` |
-| `typing_result` | `object` | ✅ | Output dari `/predict/typing` |
+| `nlp_result` | `object` | ❌ | Output dari `/predict/journal`. Default: `null` |
+| `food_result` | `object` | ❌ | Output dari `/predict/food`. Default: `null` |
+| `sleep_result` | `object` | ❌ | Output dari `/predict/sleep`. Default: `null` |
+| `typing_result` | `object` | ❌ | Output dari `/predict/typing`. Default: `null` |
 
-**Response `200 OK`:**
+**Response `200 OK` (Lengkap):**
 
 ```json
 {
@@ -214,19 +233,33 @@ Menghitung skor kesehatan holistik pengguna berdasarkan output dari semua model.
 }
 ```
 
+**Response `200 OK` (Parsial - Berdasarkan Contoh hanya Mood):**
+
+```json
+{
+  "health_score": 84,
+  "breakdown": {
+    "mood": 90,
+    "nutrition": null,
+    "stress": 80,
+    "sleep": null
+  }
+}
+```
+
 | Field | Type | Keterangan |
 |-------|------|-----------|
 | `health_score` | `integer` | Skor kesehatan keseluruhan, skala 0 – 100 |
-| `breakdown.mood` | `integer` | Skor dimensi suasana hati |
-| `breakdown.nutrition` | `integer` | Skor dimensi nutrisi |
-| `breakdown.stress` | `integer` | Skor dimensi stres (100 = tidak stres) |
-| `breakdown.sleep` | `integer` | Skor dimensi tidur |
+| `breakdown.mood` | `integer` \| `null` | Skor dimensi suasana hati. `null` jika data tidak dikirim. |
+| `breakdown.nutrition` | `integer` \| `null` | Skor dimensi nutrisi. `null` jika data tidak dikirim. |
+| `breakdown.stress` | `integer` \| `null` | Skor dimensi bebas stres (100 = tidak stres). `null` jika data tidak dikirim. |
+| `breakdown.sleep` | `integer` \| `null` | Skor dimensi tidur. `null` jika data tidak dikirim. |
 
 ---
 
-### 6. `POST /companion/chat`
+### 6. `POST /companion/chat` (Streaming)
 
-Mengirim pesan ke LLM Companion dan mendapatkan respons yang personal dan kontekstual.
+Mengirim pesan ke LLM Companion dan mendapatkan respons yang personal secara real-time melalui streaming.
 
 **Request Body:**
 
@@ -244,9 +277,25 @@ Mengirim pesan ke LLM Companion dan mendapatkan respons yang personal dan kontek
 
 **Response `200 OK`:**
 
+- **Content-Type:** `text/event-stream`
+
+**Stream Structure:**
+
+Respons dikirimkan menggunakan format Server-Sent Events (SSE). Setiap chunk diawali dengan `event: <nama_event>` dan `data: <json_payload>`.
+
+1. **Event: `delta`** (Dikirim berkali-kali selama teks di-generate)
+
 ```json
 {
-  "response": "Sepertinya kamu cukup lelah hari ini. Berdasarkan data tidurmu, kamu hanya tidur 5.5 jam semalam. Yuk coba istirahat lebih cepat malam ini!",
+  "token": "Sepertinya"
+}
+```
+
+2. **Event: `final`** (Dikirim satu kali di akhir stream)
+
+```json
+{
+  "full_response": "Sepertinya kamu cukup lelah hari ini. Berdasarkan data tidurmu, kamu hanya tidur 5.5 jam semalam. Yuk coba istirahat lebih cepat malam ini!",
   "recommendations": [
     "Tidur lebih awal, target 7–8 jam",
     "Kurangi kafein setelah jam 3 sore",
@@ -255,10 +304,11 @@ Mengirim pesan ke LLM Companion dan mendapatkan respons yang personal dan kontek
 }
 ```
 
-| Field | Type | Keterangan |
-|-------|------|-----------|
-| `response` | `string` | Respons teks dari LLM Companion |
-| `recommendations` | `string[]` | Daftar rekomendasi aksi untuk pengguna |
+| Event | Field | Type | Keterangan |
+|-------|-------|------|-----------|
+| `delta` | `token` | `string` | Potongan teks (token) yang dihasilkan oleh LLM |
+| `final` | `full_response` | `string` | Respons lengkap setelah selesai streaming |
+| `final` | `recommendations` | `string[]` | Daftar rekomendasi aksi berdasarkan konteks |
 
 ---
 

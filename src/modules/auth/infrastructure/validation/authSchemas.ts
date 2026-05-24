@@ -11,3 +11,17 @@ export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
+
+export const refreshSchema = z.object({
+  refreshToken: z.string().min(1),
+});
+
+export const googleCallbackSchema = z.union([
+  z.object({
+    code: z.string().min(1),
+  }),
+  z.object({
+    accessToken: z.string().min(1),
+    refreshToken: z.string().min(1),
+  }),
+]);

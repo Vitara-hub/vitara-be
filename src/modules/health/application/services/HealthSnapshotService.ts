@@ -174,7 +174,10 @@ export class HealthSnapshotService {
       typingStressScore: inputs.typingStressScore,
     };
 
-    const computation = this.aiClient.computeHealthScore(healthInput);
+    const computation = await this.aiClient.computeHealthScore(
+      healthInput,
+      userId,
+    );
     const insight = mapHealthStatusLabel(computation.healthScore).suggestion;
 
     const { data, error } = await this.supabase

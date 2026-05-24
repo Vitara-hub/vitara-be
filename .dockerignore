@@ -1,0 +1,25 @@
+node_modules
+dist
+.git
+.gitignore
+.env
+.env.*
+.env.local-infra.example
+coverage
+.vscode
+.idea
+.agents
+.codex
+.husky
+*.log
+*.md
+Vitara.zip
+Checklist Tech Stack - Univ.xlsx
+Project Plan - CC26-PSU042.pdf
+client_secret_*.json
+docker-compose.yml
+Dockerfile
+tests
+docs
+scripts
+supabase

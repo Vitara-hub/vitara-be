@@ -23,13 +23,11 @@ function extractOriginalFilename(
   if (safeName.length > 0) return safeName;
 
   if (mimeType === "image/png") return "upload.png";
-  if (mimeType === "image/webp") return "upload.webp";
   return "upload.jpg";
 }
 
 function extensionFromMimeType(mimeType: string): string {
   if (mimeType === "image/png") return "png";
-  if (mimeType === "image/webp") return "webp";
   return "jpg";
 }
 
@@ -152,6 +150,7 @@ export class FoodController {
         req.file.buffer,
         filename,
         mimeType,
+        userId,
       );
 
       const { data, error } = await this.supabase

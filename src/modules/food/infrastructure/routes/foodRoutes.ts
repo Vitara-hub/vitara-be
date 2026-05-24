@@ -14,7 +14,6 @@ const MAX_IMAGE_UPLOAD_BYTES = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
   "image/png",
-  "image/webp",
 ]);
 
 function createFoodUploadMiddleware() {
@@ -27,7 +26,7 @@ function createFoodUploadMiddleware() {
     fileFilter: (_req, file, callback) => {
       if (!ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype)) {
         callback(
-          new BadRequestError("Only JPEG, PNG, and WebP images are allowed"),
+          new BadRequestError("Only JPEG and PNG images are allowed"),
         );
         return;
       }

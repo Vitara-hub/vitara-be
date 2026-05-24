@@ -13,13 +13,30 @@ import {
   parseValidationError,
   requireUserId,
 } from "../../../shared/infrastructure/utils/requestUtils.js";
-import { loginSchema, signupSchema } from "../validation/authSchemas.js";
+import {
+  googleCallbackSchema,
+  loginSchema,
+  refreshSchema,
+  signupSchema,
+} from "../validation/authSchemas.js";
 
 export class AuthController {
   constructor(
     private readonly env: Env,
     private readonly supabase: SupabaseClient,
   ) {}
+
+  private sessionPayload(session: {
+    access_token: string;
+    refresh_token: string;
+    expires_in?: number;
+  }) {
+    return {
+      accessToken: session.access_token,
+      refreshToken: session.refresh_token,
+      expiresIn: session.expires_in ?? 3600,
+    };
+  }
 
   private buildAnonClient(accessToken?: string): SupabaseClient {
     const headers = accessToken
@@ -113,10 +130,74 @@ export class AuthController {
 
       res.json({
         status: "success",
+        data: this.sessionPayload(data.session),
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  refresh = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = refreshSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new BadRequestError(parseValidationError(parsed.error));
+      }
+
+      const anon = this.buildAnonClient();
+      const { data, error } = await anon.auth.refreshSession({
+        refresh_token: parsed.data.refreshToken,
+      });
+
+      if (error || !data.session) {
+        throw new UnauthorizedError("Invalid or expired refresh token");
+      }
+
+      res.json({
+        status: "success",
+        data: this.sessionPayload(data.session),
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  googleCallback = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = googleCallbackSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new BadRequestError(parseValidationError(parsed.error));
+      }
+
+      const anon = this.buildAnonClient();
+
+      if ("code" in parsed.data) {
+        const { data, error } = await anon.auth.exchangeCodeForSession(parsed.data.code);
+
+        if (error || !data.session) {
+          throw new UnauthorizedError(error?.message ?? "Failed to complete Google sign-in");
+        }
+
+        res.json({
+          status: "success",
+          data: this.sessionPayload(data.session),
+        });
+        return;
+      }
+
+      const tokenClient = this.buildAnonClient(parsed.data.accessToken);
+      const { data: userData, error: userError } = await tokenClient.auth.getUser();
+
+      if (userError || !userData.user) {
+        throw new UnauthorizedError("Invalid OAuth session tokens");
+      }
+
+      res.json({
+        status: "success",
         data: {
-          accessToken: data.session.access_token,
-          refreshToken: data.session.refresh_token,
-          expiresIn: data.session.expires_in,
+          accessToken: parsed.data.accessToken,
+          refreshToken: parsed.data.refreshToken,
+          expiresIn: 3600,
         },
       });
     } catch (err) {
