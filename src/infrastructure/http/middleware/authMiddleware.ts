@@ -17,12 +17,18 @@ declare global {
 export function authMiddleware(supabaseAdmin: SupabaseClient) {
   return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     try {
+      let token: string | undefined;
       const header = req.headers.authorization;
-      if (!header?.startsWith("Bearer ")) {
-        throw new UnauthorizedError("Missing or malformed Authorization header");
+      if (header?.startsWith("Bearer ")) {
+        token = header.slice(7);
+      } else if (req.cookies && req.cookies.access_token) {
+        token = req.cookies.access_token;
       }
 
-      const token = header.slice(7);
+      if (!token) {
+        throw new UnauthorizedError("Missing or malformed Authorization token");
+      }
+
       const { data, error } = await supabaseAdmin.auth.getUser(token);
 
       if (error || !data.user) {

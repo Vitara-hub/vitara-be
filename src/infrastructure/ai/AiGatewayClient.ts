@@ -544,4 +544,26 @@ export class AiGatewayClient {
       recommendations,
     };
   }
+
+  async chatCompanionStream(
+    message: string,
+    userId: string,
+  ): Promise<Response> {
+    const endpoint = `${this.env.AI_SERVICE_BASE_URL}/companion/chat`;
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({ user_id: userId, message }),
+      });
+
+      if (!response.ok) {
+        throw new AppError("Companion AI service is unavailable", 502);
+      }
+
+      return response;
+  }
 }

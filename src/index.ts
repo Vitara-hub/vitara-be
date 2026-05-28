@@ -52,7 +52,7 @@ async function bootstrap(): Promise<void> {
 
   applyErrorHandler(app);
 
-  app.listen(env.PORT, () => {
+  app.listen(env.PORT, '0.0.0.0', () => {
     logger.info(`Server running on port ${env.PORT} (${env.NODE_ENV})`);
   });
 }
