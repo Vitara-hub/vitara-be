@@ -76,6 +76,7 @@ jobs:
           EC2_USER: ${{ secrets.EC2_USERNAME }}
           APP_PORT: ${{ env.APP_PORT }}
           CONTAINER_NAME: ${{ env.CONTAINER_NAME }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -91,6 +92,7 @@ jobs:
             REPO="$REPO" \
             APP_PORT="$APP_PORT" \
             CONTAINER_NAME="$CONTAINER_NAME" \
+            FRONTEND_URL="$FRONTEND_URL" \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
             SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
@@ -116,6 +118,7 @@ jobs:
             --name "$CONTAINER_NAME" \
             --restart unless-stopped \
             --env NODE_ENV=production \
+            --env FRONTEND_URL="$FRONTEND_URL" \
             --env PORT="$APP_PORT" \
             --env SUPABASE_URL="$SUPABASE_URL" \
             --env SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
