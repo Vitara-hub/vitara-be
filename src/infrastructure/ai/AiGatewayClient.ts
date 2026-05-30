@@ -138,6 +138,12 @@ function roundTo2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+function normalizeScoreToPercent(value: number): number {
+  if (!Number.isFinite(value)) return NaN;
+  // Accept both 0..1 and 0..100 scales from AI service.
+  return value <= 1 ? value * 100 : value;
+}
+
 function toRoundedScoreOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value)
     ? clamp(Math.round(value), 0, 100)
@@ -312,7 +318,11 @@ export class AiGatewayClient {
     }
 
     return {
-      qualityScore: clamp(Math.round(qualityScoreRaw), 0, 100),
+      qualityScore: clamp(
+        Math.round(normalizeScoreToPercent(qualityScoreRaw)),
+        0,
+        100,
+      ),
     };
   }
 
