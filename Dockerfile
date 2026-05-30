@@ -21,6 +21,12 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+# Pull latest security patches from Debian repository at build time.
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install production deps only
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production --ignore-scripts && \
