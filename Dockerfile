@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ── Stage 1: Install dependencies ───────────────────
-FROM oven/bun:1.2.21-alpine AS deps
+FROM oven/bun:1.2.21-slim AS deps
 WORKDIR /app
 
 COPY package.json bun.lock ./
@@ -16,7 +16,7 @@ COPY src ./src
 RUN bun run build
 
 # ── Stage 3: Production runtime ─────────────────────
-FROM oven/bun:1.2.21-alpine AS runtime
+FROM oven/bun:1.2.21-slim AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -33,7 +33,7 @@ EXPOSE 3000
 
 # Health check — Docker will auto-restart unhealthy containers with restart policy
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+  CMD bun -e "fetch('http://localhost:3000/health').then((r) => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1))"
 
 # Run as non-root
 USER bun
