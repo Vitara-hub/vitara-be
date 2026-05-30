@@ -36,20 +36,20 @@ export interface TypingPrediction {
 }
 
 export interface HealthComputationInput {
-  emotion: string;
-  journalStressLevel: number;
-  nutritionCalories: number;
-  sleepQualityScore: number;
-  typingStressScore: number;
+  emotion?: string | null;
+  journalStressLevel?: number | null;
+  nutritionCalories?: number | null;
+  sleepQualityScore?: number | null;
+  typingStressScore?: number | null;
 }
 
 export interface HealthComputationResult {
   healthScore: number;
   breakdown: {
-    mood: number;
-    nutrition: number;
-    stress: number;
-    sleep: number;
+    mood: number | null;
+    nutrition: number | null;
+    stress: number | null;
+    sleep: number | null;
   };
 }
 
@@ -115,22 +115,17 @@ function parseJournalPayload(
       ? stressLevelRaw
       : DEFAULT_JOURNAL_PREDICTION.stressLevel;
 
-  const topicsRaw = [
-    normalizeTopics(payload.topics),
-    normalizeTopics(payload.topic),
-    normalizeTopics(payload.keywords),
-  ].find((topics) => topics.length > 0) ?? [];
+  const topicsRaw =
+    [
+      normalizeTopics(payload.topics),
+      normalizeTopics(payload.topic),
+      normalizeTopics(payload.keywords),
+    ].find((topics) => topics.length > 0) ?? [];
 
   return {
     emotion:
       emotionRaw.length > 0 ? emotionRaw : DEFAULT_JOURNAL_PREDICTION.emotion,
-    stressLevel: roundTo2(
-      clamp(
-        stressLevelValue,
-        0,
-        1,
-      ),
-    ),
+    stressLevel: roundTo2(clamp(stressLevelValue, 0, 1)),
     topics:
       topicsRaw.length > 0 ? topicsRaw : DEFAULT_JOURNAL_PREDICTION.topics,
   };
@@ -142,6 +137,12 @@ function clamp(value: number, min: number, max: number): number {
 
 function roundTo2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function toRoundedScoreOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value)
+    ? clamp(Math.round(value), 0, 100)
+    : null;
 }
 
 function parseSseDataEvents(raw: string): Array<Record<string, unknown>> {
@@ -195,7 +196,10 @@ export class AiGatewayClient {
     }
   }
 
-  async predictJournal(text: string, userId: string): Promise<JournalPrediction> {
+  async predictJournal(
+    text: string,
+    userId: string,
+  ): Promise<JournalPrediction> {
     const endpoint = `${this.env.AI_SERVICE_BASE_URL}/predict/journal`;
 
     try {
@@ -209,18 +213,24 @@ export class AiGatewayClient {
 
       if (!response.ok) {
         const fallback = DEFAULT_JOURNAL_PREDICTION;
-        this.logger.warn("Journal AI returned non-OK response. Falling back to mock.", {
-          status: response.status,
-        });
+        this.logger.warn(
+          "Journal AI returned non-OK response. Falling back to mock.",
+          {
+            status: response.status,
+          },
+        );
         return fallback;
       }
 
       const payload = (await response.json()) as Record<string, unknown>;
       return parseJournalPayload(payload);
     } catch (err) {
-      this.logger.warn("Journal AI request failed. Falling back to mock response.", {
-        error: err instanceof Error ? err.message : "unknown",
-      });
+      this.logger.warn(
+        "Journal AI request failed. Falling back to mock response.",
+        {
+          error: err instanceof Error ? err.message : "unknown",
+        },
+      );
 
       return DEFAULT_JOURNAL_PREDICTION;
     }
@@ -286,7 +296,7 @@ export class AiGatewayClient {
         bedtime: input.bedtime,
         wake_time: input.wakeTime,
         interruptions: input.interruptions,
-        sleep_debt_hours: input.sleepDebtHours,
+        // sleep_debt_hours: input.sleepDebtHours,
         user_id: userId,
       }),
     });
@@ -348,6 +358,38 @@ export class AiGatewayClient {
     userId: string,
   ): Promise<HealthComputationResult> {
     const endpoint = `${this.env.AI_SERVICE_BASE_URL}/health/score`;
+    const nlpResult =
+      typeof input.emotion === "string" &&
+      input.emotion.length > 0 &&
+      typeof input.journalStressLevel === "number" &&
+      Number.isFinite(input.journalStressLevel)
+        ? {
+            emotion: input.emotion,
+            stress_level: input.journalStressLevel,
+          }
+        : null;
+    const foodResult =
+      typeof input.nutritionCalories === "number" &&
+      Number.isFinite(input.nutritionCalories)
+        ? {
+            estimated_calories: input.nutritionCalories,
+          }
+        : null;
+    const sleepResult =
+      typeof input.sleepQualityScore === "number" &&
+      Number.isFinite(input.sleepQualityScore)
+        ? {
+            quality_score: input.sleepQualityScore,
+          }
+        : null;
+    const typingResult =
+      typeof input.typingStressScore === "number" &&
+      Number.isFinite(input.typingStressScore)
+        ? {
+            stress_score: input.typingStressScore,
+          }
+        : null;
+
     const response = await this.fetchWithTimeout(endpoint, {
       method: "POST",
       headers: {
@@ -355,19 +397,10 @@ export class AiGatewayClient {
       },
       body: JSON.stringify({
         user_id: userId,
-        nlp_result: {
-          emotion: input.emotion,
-          stress_level: input.journalStressLevel,
-        },
-        food_result: {
-          estimated_calories: input.nutritionCalories,
-        },
-        sleep_result: {
-          quality_score: input.sleepQualityScore,
-        },
-        typing_result: {
-          stress_score: input.typingStressScore,
-        },
+        ...(nlpResult ? { nlp_result: nlpResult } : {}),
+        ...(foodResult ? { food_result: foodResult } : {}),
+        ...(sleepResult ? { sleep_result: sleepResult } : {}),
+        ...(typingResult ? { typing_result: typingResult } : {}),
       }),
     });
 
@@ -385,33 +418,17 @@ export class AiGatewayClient {
 
     const healthScoreRaw =
       typeof payload.health_score === "number" ? payload.health_score : NaN;
-    const moodRaw = typeof breakdown.mood === "number" ? breakdown.mood : NaN;
-    const nutritionRaw =
-      typeof breakdown.nutrition === "number" ? breakdown.nutrition : NaN;
-    const stressRaw =
-      typeof breakdown.stress === "number" ? breakdown.stress : NaN;
-    const sleepRaw =
-      typeof breakdown.sleep === "number" ? breakdown.sleep : NaN;
-
-    if (
-      ![
-        healthScoreRaw,
-        moodRaw,
-        nutritionRaw,
-        stressRaw,
-        sleepRaw,
-      ].every(Number.isFinite)
-    ) {
+    if (!Number.isFinite(healthScoreRaw)) {
       throw new AppError("Health AI response is invalid", 502);
     }
 
     return {
       healthScore: clamp(Math.round(healthScoreRaw), 0, 100),
       breakdown: {
-        mood: clamp(Math.round(moodRaw), 0, 100),
-        nutrition: clamp(Math.round(nutritionRaw), 0, 100),
-        stress: clamp(Math.round(stressRaw), 0, 100),
-        sleep: clamp(Math.round(sleepRaw), 0, 100),
+        mood: toRoundedScoreOrNull(breakdown.mood),
+        nutrition: toRoundedScoreOrNull(breakdown.nutrition),
+        stress: toRoundedScoreOrNull(breakdown.stress),
+        sleep: toRoundedScoreOrNull(breakdown.sleep),
       },
     };
   }
@@ -455,7 +472,8 @@ export class AiGatewayClient {
     const recommendations =
       finalEvent && Array.isArray(finalEvent.recommendations)
         ? finalEvent.recommendations.filter(
-            (item): item is string => typeof item === "string" && item.length > 0,
+            (item): item is string =>
+              typeof item === "string" && item.length > 0,
           )
         : [];
 
@@ -475,19 +493,19 @@ export class AiGatewayClient {
   ): Promise<Response> {
     const endpoint = `${this.env.AI_SERVICE_BASE_URL}/companion/chat`;
 
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-        },
-        body: JSON.stringify({ user_id: userId, message }),
-      });
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify({ user_id: userId, message }),
+    });
 
-      if (!response.ok) {
-        throw new AppError("Companion AI service is unavailable", 502);
-      }
+    if (!response.ok) {
+      throw new AppError("Companion AI service is unavailable", 502);
+    }
 
-      return response;
+    return response;
   }
 }

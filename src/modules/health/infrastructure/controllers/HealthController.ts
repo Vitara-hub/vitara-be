@@ -174,9 +174,13 @@ export class HealthController {
               ? snapshot.insight_summary
               : status.suggestion,
           breakdown: {
-            moodLabel: mapEmotionLabel(dailyInputs.emotion),
-            stressLabel: mapStressLabel(Number(snapshot.stress_score)),
-            nutritionKcal: Math.round(dailyInputs.nutritionCalories),
+            moodLabel: mapEmotionLabel(dailyInputs.emotion ?? "neutral"),
+            stressLabel: mapStressLabel(
+              typeof snapshot.stress_score === "number"
+                ? Number(snapshot.stress_score)
+                : 0,
+            ),
+            nutritionKcal: Math.round(dailyInputs.nutritionCalories ?? 0),
             sleepHours: dailyInputs.sleepHours,
           },
         },

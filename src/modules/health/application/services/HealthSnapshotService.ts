@@ -11,11 +11,11 @@ import {
 import { mapHealthStatusLabel } from "../../../shared/infrastructure/utils/healthPresentation.js";
 
 export interface DailyInputs {
-  emotion: string;
-  journalStressLevel: number;
-  nutritionCalories: number;
-  sleepQualityScore: number;
-  typingStressScore: number;
+  emotion: string | null;
+  journalStressLevel: number | null;
+  nutritionCalories: number | null;
+  sleepQualityScore: number | null;
+  typingStressScore: number | null;
   sleepHours: number;
 }
 
@@ -142,20 +142,20 @@ export class HealthSnapshotService {
       emotion:
         journalMeta && typeof journalMeta.emotion === "string"
           ? journalMeta.emotion
-          : "neutral",
+          : null,
       journalStressLevel:
         journalRow && typeof journalRow.stress_score === "number"
           ? clamp(journalRow.stress_score, 0, 1)
-          : 0.5,
-      nutritionCalories,
+          : null,
+      nutritionCalories: nutritionCalories > 0 ? nutritionCalories : null,
       sleepQualityScore:
         sleepRow && typeof sleepRow.ai_quality_score === "number"
           ? clamp(sleepRow.ai_quality_score, 0, 100)
-          : 70,
+          : null,
       typingStressScore:
         typingRow && typeof typingRow.stress_score === "number"
           ? clamp(typingRow.stress_score, 0, 1)
-          : 0.4,
+          : null,
       sleepHours: Math.round(sleepHours * 100) / 100,
     };
   }
