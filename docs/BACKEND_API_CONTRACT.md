@@ -647,6 +647,36 @@ Query:
 - `limit`: optional, default `20`, max `100`
 - `cursor`: optional ISO date-time
 
+Response:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "items": [
+      {
+        "id": "uuid",
+        "sessionId": "uuid",
+        "role": "assistant",
+        "content": "Aku dengar kamu lagi capek...",
+        "recommendations": [
+          "Minum air putih",
+          "Istirahat 10 menit"
+        ],
+        "model": "vitara-ai-companion",
+        "createdAt": "2026-05-08T13:00:00.000Z"
+      }
+    ],
+    "nextCursor": null
+  }
+}
+```
+
+Catatan:
+
+- `recommendations` hanya terisi untuk pesan role `assistant`; untuk role lain bernilai `null`.
+- `content` pada pesan assistant adalah jawaban utama tanpa daftar rekomendasi.
+
 ## Profile
 
 ### `GET /api/profile`

@@ -41,6 +41,54 @@ export type AssistantResponsePayload = {
   recommendations?: string[];
 };
 
+export function buildAssistantStoredContent(
+  response: string,
+  recommendations?: string[],
+): string {
+  const sanitizedResponse = sanitizeTextForStorage(response);
+  if (!Array.isArray(recommendations) || recommendations.length === 0) {
+    return sanitizedResponse;
+  }
+
+  const normalizedRecommendations = recommendations
+    .map((item) => sanitizeTextForStorage(item))
+    .filter((item) => item.length > 0);
+
+  if (normalizedRecommendations.length === 0) {
+    return sanitizedResponse;
+  }
+
+  const recommendationBlock = normalizedRecommendations
+    .map((item) => `- ${item}`)
+    .join("\n");
+
+  return `${sanitizedResponse}\n\nRecommendations:\n${recommendationBlock}`;
+}
+
+export function parseAssistantStoredContent(content: string): AssistantResponsePayload {
+  const normalized = sanitizeTextForStorage(content);
+  const marker = "\n\nRecommendations:\n";
+  const markerIndex = normalized.indexOf(marker);
+
+  if (markerIndex === -1) {
+    return { response: normalized };
+  }
+
+  const response = normalized.slice(0, markerIndex).trim();
+  const recommendationRaw = normalized.slice(markerIndex + marker.length);
+  const recommendations = recommendationRaw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("- "))
+    .map((line) => sanitizeTextForStorage(line.slice(2)))
+    .filter((line) => line.length > 0);
+
+  return {
+    response,
+    recommendations: recommendations.length > 0 ? recommendations : undefined,
+  };
+}
+
 function payloadFromParsedAssistantJson(
   parsed: Record<string, unknown>,
 ): AssistantResponsePayload | null {
@@ -413,6 +461,7 @@ export class ChatController {
       }
 
       let assistantMessage = "";
+      let assistantRecommendations: string[] = [];
       let assistantModel = "vitara-ai-companion";
 
       res.setHeader("Content-Type", "text/event-stream");
@@ -471,6 +520,9 @@ export class ChatController {
               res.write(`data: ${JSON.stringify(sanitized)}\n\n`);
               assistantMessage =
                 "full_response" in sanitized ? sanitized.full_response : assistantMessage;
+              if ("recommendations" in sanitized && Array.isArray(sanitized.recommendations)) {
+                assistantRecommendations = sanitized.recommendations;
+              }
             }
           }
 
@@ -499,6 +551,12 @@ export class ChatController {
                   res.write(`data: ${JSON.stringify(sanitized)}\n\n`);
                   assistantMessage =
                     "full_response" in sanitized ? sanitized.full_response : assistantMessage;
+                  if (
+                    "recommendations" in sanitized &&
+                    Array.isArray(sanitized.recommendations)
+                  ) {
+                    assistantRecommendations = sanitized.recommendations;
+                  }
                 }
               }
             }
@@ -512,7 +570,10 @@ export class ChatController {
 
       res.end();
 
-      assistantMessage = sanitizeTextForStorage(unwrapAssistantJson(assistantMessage));
+      assistantMessage = buildAssistantStoredContent(
+        unwrapAssistantJson(assistantMessage),
+        assistantRecommendations,
+      );
 
       const { error: assistantError } = await this.supabase
         .from("chat_messages")
@@ -600,14 +661,23 @@ export class ChatController {
       res.json({
         status: "success",
         data: {
-          items: items.map((row) => ({
-            id: String(row.id),
-            sessionId: String(row.session_id),
-            role: String(row.role),
-            content: String(row.content),
-            model: typeof row.model === "string" ? row.model : null,
-            createdAt: String(row.created_at),
-          })),
+          items: items.map((row) => {
+            const role = String(row.role);
+            const parsedContent =
+              role === "assistant"
+                ? parseAssistantStoredContent(String(row.content))
+                : { response: String(row.content), recommendations: undefined };
+
+            return {
+              id: String(row.id),
+              sessionId: String(row.session_id),
+              role,
+              content: parsedContent.response,
+              recommendations: parsedContent.recommendations ?? null,
+              model: typeof row.model === "string" ? row.model : null,
+              createdAt: String(row.created_at),
+            };
+          }),
           nextCursor,
         },
       });
