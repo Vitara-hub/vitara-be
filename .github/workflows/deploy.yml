@@ -73,6 +73,8 @@ jobs:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
       - name: Scan repository filesystem (Trivy)
+        id: trivy_fs
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -90,6 +92,13 @@ jobs:
           echo "=== Trivy FS findings ==="
           cat trivy-fs.txt
 
+      - name: Gate FS scan on HIGH/CRITICAL
+        run: |
+          if [ "${{ steps.trivy_fs.outcome }}" = "failure" ]; then
+            echo "Trivy FS gate failed: HIGH/CRITICAL findings detected."
+            exit 1
+          fi
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -98,6 +107,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Scan built image from GHCR (Trivy)
+        id: trivy_image
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ghcr.io/${{ needs.build.outputs.repo_lc }}:latest
@@ -113,6 +124,13 @@ jobs:
         run: |
           echo "=== Trivy image findings ==="
           cat trivy-image.txt
+
+      - name: Gate image scan on HIGH/CRITICAL
+        run: |
+          if [ "${{ steps.trivy_image.outcome }}" = "failure" ]; then
+            echo "Trivy image gate failed: HIGH/CRITICAL findings detected."
+            exit 1
+          fi
 
       - name: Upload Trivy text reports
         uses: actions/upload-artifact@v4

@@ -177,21 +177,6 @@ function caloriesToNutritionScore(calories: number): number {
   return Math.round(45 + normalized * 55);
 }
 
-function calculateSleepFallback(input: SleepPredictionInput): SleepPrediction {
-  const base = 70;
-  const durationBoost = clamp((input.durationHours - 7) * 8, -20, 15);
-  const interruptionsPenalty = clamp(input.interruptions * 8, 0, 30);
-  const debtPenalty = clamp(input.sleepDebtHours * 10, 0, 30);
-
-  const qualityScore = clamp(
-    Math.round(base + durationBoost - interruptionsPenalty - debtPenalty),
-    0,
-    100,
-  );
-
-  return { qualityScore };
-}
-
 function calculateTypingFallback(input: TypingPredictionInput): TypingPrediction {
   const wpmRisk = clamp((55 - input.wpm) / 55, 0, 1);
   const backspaceRisk = clamp(input.backspaceRate, 0, 1);
@@ -368,48 +353,36 @@ export class AiGatewayClient {
     userId: string,
   ): Promise<SleepPrediction> {
     const endpoint = `${this.env.AI_SERVICE_BASE_URL}/predict/sleep`;
+    const response = await this.fetchWithTimeout(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        duration_hours: input.durationHours,
+        bedtime: input.bedtime,
+        wake_time: input.wakeTime,
+        interruptions: input.interruptions,
+        sleep_debt_hours: input.sleepDebtHours,
+        user_id: userId,
+      }),
+    });
 
-    try {
-      const response = await this.fetchWithTimeout(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          duration_hours: input.durationHours,
-          bedtime: input.bedtime,
-          wake_time: input.wakeTime,
-          interruptions: input.interruptions,
-          sleep_debt_hours: input.sleepDebtHours,
-          user_id: userId,
-        }),
-      });
-
-      if (!response.ok) {
-        this.logger.warn("Sleep AI returned non-OK response. Falling back.", {
-          status: response.status,
-        });
-        return calculateSleepFallback(input);
-      }
-
-      const payload = (await response.json()) as Record<string, unknown>;
-      const qualityScoreRaw =
-        typeof payload.quality_score === "number" ? payload.quality_score : NaN;
-
-      if (!Number.isFinite(qualityScoreRaw)) {
-        throw new AppError("Sleep AI response is invalid", 502);
-      }
-
-      return {
-        qualityScore: clamp(Math.round(qualityScoreRaw), 0, 100),
-      };
-    } catch (err) {
-      this.logger.warn("Sleep AI request failed. Falling back.", {
-        error: err instanceof Error ? err.message : "unknown",
-      });
-
-      return calculateSleepFallback(input);
+    if (!response.ok) {
+      throw new AppError("Sleep AI service is unavailable", 502);
     }
+
+    const payload = (await response.json()) as Record<string, unknown>;
+    const qualityScoreRaw =
+      typeof payload.quality_score === "number" ? payload.quality_score : NaN;
+
+    if (!Number.isFinite(qualityScoreRaw)) {
+      throw new AppError("Sleep AI response is invalid", 502);
+    }
+
+    return {
+      qualityScore: clamp(Math.round(qualityScoreRaw), 0, 100),
+    };
   }
 
   async predictTyping(
