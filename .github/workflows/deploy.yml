@@ -21,6 +21,8 @@ jobs:
       repo_lc: ${{ steps.repo-lc.outputs.repo }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Lowercase repo name
         id: repo-lc
@@ -65,6 +67,8 @@ jobs:
       packages: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Secret scan (Gitleaks)
         uses: gitleaks/gitleaks-action@v2
