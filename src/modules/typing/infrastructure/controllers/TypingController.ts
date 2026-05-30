@@ -4,6 +4,10 @@ import { AppError, BadRequestError } from "../../../../core/errors/AppError.js";
 import type { AiGatewayClient } from "../../../../infrastructure/ai/AiGatewayClient.js";
 import { getDayBoundaries } from "../../../shared/infrastructure/utils/dateUtils.js";
 import {
+  decryptField,
+  encryptField,
+} from "../../../shared/infrastructure/utils/fieldEncryption.js";
+import {
   parseValidationError,
   requireUserId,
 } from "../../../shared/infrastructure/utils/requestUtils.js";
@@ -78,7 +82,7 @@ export class TypingController {
           user_id: userId,
           wpm: parsed.data.wpm,
           duration: parsed.data.duration,
-          text_content: parsed.data.textContent,
+          text_content: encryptField(parsed.data.textContent),
           backspace_rate: parsed.data.backspaceRate,
           inter_key_timing: parsed.data.interKeyTimings,
           stress_score: prediction.stressScore,
@@ -160,7 +164,7 @@ export class TypingController {
             id: String(row.id),
             wpm: Number(row.wpm),
             duration: Number(row.duration),
-            textContent: String(row.text_content),
+            textContent: decryptField(String(row.text_content)),
             backspaceRate:
               typeof row.backspace_rate === "number"
                 ? Number(row.backspace_rate)
@@ -206,7 +210,7 @@ export class TypingController {
           user_id: userId,
           wpm: 0,
           duration: 0,
-          text_content: parsed.data.text,
+          text_content: encryptField(parsed.data.text),
           backspace_rate: null,
           inter_key_timing: {
             emotion: prediction.emotion,
@@ -287,7 +291,7 @@ export class TypingController {
 
             return {
               id: String(row.id),
-              text: String(row.text_content),
+              text: decryptField(String(row.text_content)),
               emotion: meta.emotion,
               stressLevel:
                 typeof row.stress_score === "number"
