@@ -3,7 +3,7 @@ import {
   buildAssistantStoredContent,
   parseAssistantStoredContent,
   unwrapAssistantPayload,
-} from "../../../../src/modules/chat/infrastructure/controllers/ChatController.js";
+} from "../../../../src/modules/chat/application/services/CompanionMessageService.js";
 
 describe("unwrapAssistantPayload", () => {
   test("should preserve recommendations from markdown fenced JSON response", () => {
