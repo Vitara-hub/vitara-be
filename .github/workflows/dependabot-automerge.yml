@@ -19,6 +19,16 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Auto approve safe updates
+        if: >
+          (steps.metadata.outputs.package-ecosystem == 'npm' &&
+            (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+             steps.metadata.outputs.update-type == 'version-update:semver-minor')) ||
+          (steps.metadata.outputs.package-ecosystem == 'github-actions')
+        uses: hmarr/auto-approve-action@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Enable auto-merge for safe updates
         if: >
           (steps.metadata.outputs.package-ecosystem == 'npm' &&
@@ -29,3 +39,15 @@ jobs:
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip reason
+        if: >
+          !(
+            (steps.metadata.outputs.package-ecosystem == 'npm' &&
+              (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+               steps.metadata.outputs.update-type == 'version-update:semver-minor')) ||
+            (steps.metadata.outputs.package-ecosystem == 'github-actions')
+          )
+        run: |
+          echo "Skip auto-merge for update type: ${{ steps.metadata.outputs.update-type }}"
+          echo "Package ecosystem: ${{ steps.metadata.outputs.package-ecosystem }}"
