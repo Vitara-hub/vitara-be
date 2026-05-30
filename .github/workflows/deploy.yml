@@ -78,6 +78,24 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
+          format: table
+          output: trivy-fs.txt
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln,misconfig,secret
+          exit-code: 0
+
+      - name: Show Trivy FS findings in logs
+        run: |
+          echo "=== Trivy FS findings ==="
+          cat trivy-fs.txt
+
+      - name: Scan repository filesystem for SARIF gate (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
           format: sarif
           output: trivy-fs.sarif
           severity: HIGH,CRITICAL
@@ -102,6 +120,23 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ghcr.io/${{ needs.build.outputs.repo_lc }}:latest
+          format: table
+          output: trivy-image.txt
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln,misconfig,secret
+          exit-code: 0
+
+      - name: Show Trivy Image findings in logs
+        run: |
+          echo "=== Trivy image findings ==="
+          cat trivy-image.txt
+
+      - name: Scan built image for SARIF gate (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ needs.build.outputs.repo_lc }}:latest
           format: sarif
           output: trivy-image.sarif
           severity: HIGH,CRITICAL
@@ -114,6 +149,14 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-image.sarif
+
+      - name: Upload Trivy text reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-reports
+          path: |
+            trivy-fs.txt
+            trivy-image.txt
 
   # ── Pull pre-built image on EC2 & restart container ─────────────────────────
   deploy:
