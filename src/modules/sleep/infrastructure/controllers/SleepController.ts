@@ -8,6 +8,10 @@ import {
   getDayBoundaries,
 } from "../../../shared/infrastructure/utils/dateUtils.js";
 import {
+  decryptField,
+  encryptField,
+} from "../../../shared/infrastructure/utils/fieldEncryption.js";
+import {
   parseValidationError,
   requireUserId,
 } from "../../../shared/infrastructure/utils/requestUtils.js";
@@ -61,7 +65,7 @@ export class SleepController {
           start_time: window.start.toISOString(),
           end_time: window.end.toISOString(),
           quality: qualityForScaleFive,
-          notes: parsed.data.notes ?? null,
+          notes: parsed.data.notes ? encryptField(parsed.data.notes) : null,
           ai_quality_score: prediction.qualityScore,
           sleep_debt_hours: null,
           interruptions: parsed.data.interruptions,
@@ -144,7 +148,8 @@ export class SleepController {
             startTime: String(row.start_time),
             endTime: String(row.end_time),
             quality: Number(row.quality),
-            notes: typeof row.notes === "string" ? row.notes : null,
+            notes:
+              typeof row.notes === "string" ? decryptField(row.notes) : null,
             qualityScore:
               typeof row.ai_quality_score === "number"
                 ? Number(row.ai_quality_score)

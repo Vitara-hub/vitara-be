@@ -12,6 +12,7 @@ const envSchema = z.object({
   AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(8000),
   SUPABASE_FOOD_BUCKET: z.string().min(1).default("food-images"),
   GOOGLE_OAUTH_REDIRECT_URL: z.string().url().optional(),
+  DATA_ENCRYPTION_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

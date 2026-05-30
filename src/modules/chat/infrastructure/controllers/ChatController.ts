@@ -17,6 +17,10 @@ import {
   sendChatMessageSchema,
 } from "../validation/chatSchemas.js";
 import {
+  decryptField,
+  encryptField,
+} from "../../../shared/infrastructure/utils/fieldEncryption.js";
+import {
   buildAssistantStoredContent,
   createCompanionFallbackResponse,
   createJsonTokenStreamState,
@@ -170,7 +174,7 @@ export class ChatController {
           user_id: userId,
           session_id: parsed.data.sessionId,
           role: "user",
-          content: parsed.data.message,
+          content: encryptField(parsed.data.message),
         });
 
       if (userMessageError) {
@@ -301,7 +305,7 @@ export class ChatController {
           user_id: userId,
           session_id: parsed.data.sessionId,
           role: "assistant",
-          content: assistantMessage,
+          content: encryptField(assistantMessage),
           model: assistantModel,
         });
 
@@ -383,10 +387,11 @@ export class ChatController {
         data: {
           items: items.map((row) => {
             const role = String(row.role);
+            const decryptedContent = decryptField(String(row.content));
             const parsedContent =
               role === "assistant"
-                ? parseAssistantStoredContent(String(row.content))
-                : { response: String(row.content), recommendations: undefined };
+                ? parseAssistantStoredContent(decryptedContent)
+                : { response: decryptedContent, recommendations: undefined };
 
             return {
               id: String(row.id),
