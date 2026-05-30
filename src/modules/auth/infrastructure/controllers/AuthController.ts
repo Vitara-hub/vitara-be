@@ -9,17 +9,63 @@ import {
 } from "../../../../core/errors/AppError.js";
 import type { Env } from "../../../../infrastructure/config/env.js";
 import {
-  extractBearerToken,
   parseValidationError,
   requireUserId,
 } from "../../../shared/infrastructure/utils/requestUtils.js";
-import { loginSchema, signupSchema } from "../validation/authSchemas.js";
+import {
+  googleCallbackSchema,
+  loginSchema,
+  signupSchema,
+} from "../validation/authSchemas.js";
 
 export class AuthController {
   constructor(
     private readonly env: Env,
     private readonly supabase: SupabaseClient,
   ) {}
+
+  private sessionPayload(session: {
+    access_token: string;
+    refresh_token: string;
+    expires_in?: number;
+  }) {
+    return {
+      accessToken: session.access_token,
+      refreshToken: session.refresh_token,
+      expiresIn: session.expires_in ?? 3600,
+    };
+  }
+
+  private setCookies(res: Response, session: { access_token: string; refresh_token: string; expires_in?: number }) {
+    const isProd = process.env.NODE_ENV === "production";
+    const baseOptions = {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: (isProd ? "none" : "lax") as "none" | "lax",
+    };
+
+    res.cookie("access_token", session.access_token, {
+      ...baseOptions,
+      maxAge: (session.expires_in ?? 3600) * 1000,
+    });
+
+    res.cookie("refresh_token", session.refresh_token, {
+      ...baseOptions,
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+  }
+
+  private clearCookies(res: Response) {
+    const isProd = process.env.NODE_ENV === "production";
+    const baseOptions = {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: (isProd ? "none" : "lax") as "none" | "lax",
+    };
+    
+    res.clearCookie("access_token", baseOptions);
+    res.clearCookie("refresh_token", baseOptions);
+  }
 
   private buildAnonClient(accessToken?: string): SupabaseClient {
     const headers = accessToken
@@ -44,7 +90,31 @@ export class AuthController {
         throw new BadRequestError(parseValidationError(parsed.error));
       }
 
-      const { username, fullName, email, password } = parsed.data;
+      const { email, password } = parsed.data;
+      const fullName = parsed.data.fullName || email.split("@")[0];
+      
+      let username = parsed.data.username;
+      if (!username) {
+        const localPart = email.split("@")[0];
+        const normalized = localPart.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 24);
+        const safeBase = normalized.length >= 3 ? normalized : `${normalized}_user`;
+        username = `${safeBase}_${Math.floor(Math.random() * 10000)}`.slice(0, 30);
+      }
+
+      // Check for unique username
+      const { data: existingProfile, error: profileCheckError } = await this.supabase
+        .from("profiles")
+        .select("id")
+        .eq("username", username)
+        .maybeSingle();
+      
+      if (profileCheckError) {
+         throw new AppError(`Failed to check username uniqueness: ${profileCheckError.message}`, 500);
+      }
+      
+      if (existingProfile) {
+        throw new ConflictError("Username is already taken");
+      }
 
       const { data, error } = await this.supabase.auth.admin.createUser({
         email,
@@ -111,12 +181,90 @@ export class AuthController {
         throw new UnauthorizedError("Invalid email or password");
       }
 
+      this.setCookies(res, data.session);
+      res.json({
+        status: "success",
+        data: this.sessionPayload(data.session),
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  refresh = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const refreshTokenFromCookie = req.cookies?.refresh_token;
+      const bodyToken = req.body.refreshToken;
+      
+      const refreshToken = bodyToken || refreshTokenFromCookie;
+      
+      if (!refreshToken) {
+         throw new BadRequestError("Missing refresh token");
+      }
+
+      const anon = this.buildAnonClient();
+      const { data, error } = await anon.auth.refreshSession({
+        refresh_token: refreshToken,
+      });
+
+      if (error || !data.session) {
+        throw new UnauthorizedError("Invalid or expired refresh token");
+      }
+
+      this.setCookies(res, data.session);
+      res.json({
+        status: "success",
+        data: this.sessionPayload(data.session),
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  googleCallback = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = googleCallbackSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new BadRequestError(parseValidationError(parsed.error));
+      }
+
+      const anon = this.buildAnonClient();
+
+      if ("code" in parsed.data) {
+        const { data, error } = await anon.auth.exchangeCodeForSession(parsed.data.code);
+
+        if (error || !data.session) {
+          throw new UnauthorizedError(error?.message ?? "Failed to complete Google sign-in");
+        }
+
+        this.setCookies(res, data.session);
+        res.json({
+          status: "success",
+          data: this.sessionPayload(data.session),
+        });
+        return;
+      }
+
+      const tokenClient = this.buildAnonClient(parsed.data.accessToken);
+      const { data: userData, error: userError } = await tokenClient.auth.getUser();
+
+      if (userError || !userData.user) {
+        throw new UnauthorizedError("Invalid OAuth session tokens");
+      }
+
+      // Accept implicit/hash tokens from client as a fallback, but still
+      // move them into HttpOnly cookies for subsequent requests.
+      this.setCookies(res, {
+        access_token: parsed.data.accessToken,
+        refresh_token: parsed.data.refreshToken,
+        expires_in: 3600,
+      });
       res.json({
         status: "success",
         data: {
-          accessToken: data.session.access_token,
-          refreshToken: data.session.refresh_token,
-          expiresIn: data.session.expires_in,
+          accessToken: parsed.data.accessToken,
+          refreshToken: parsed.data.refreshToken,
+          expiresIn: 3600,
         },
       });
     } catch (err) {
@@ -155,7 +303,18 @@ export class AuthController {
   logout = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       requireUserId(req);
-      const token = extractBearerToken(req);
+      const header = req.headers.authorization;
+      const token =
+        header?.startsWith("Bearer ")
+          ? header.slice(7)
+          : (req.cookies?.access_token as string | undefined);
+
+      if (!token) {
+        // If the user is authenticated via cookies but token is missing, still clear cookies.
+        this.clearCookies(res);
+        res.json({ status: "success", data: {} });
+        return;
+      }
       const anon = this.buildAnonClient(token);
       const { error } = await anon.auth.signOut();
 
@@ -163,6 +322,7 @@ export class AuthController {
         throw new AppError(`Logout failed: ${error.message}`, 400);
       }
 
+      this.clearCookies(res);
       res.json({
         status: "success",
         data: {},

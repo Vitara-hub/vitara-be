@@ -38,13 +38,16 @@ export class SleepController {
         parsed.data.sleepTime,
         parsed.data.wakeTime,
       );
-      const prediction = this.aiClient.predictSleep({
-        durationHours: window.durationHours,
-        bedtime: parsed.data.sleepTime,
-        wakeTime: parsed.data.wakeTime,
-        interruptions: parsed.data.interruptions,
-        sleepDebtHours: window.sleepDebtHours,
-      });
+      const prediction = await this.aiClient.predictSleep(
+        {
+          durationHours: window.durationHours,
+          bedtime: parsed.data.sleepTime,
+          wakeTime: parsed.data.wakeTime,
+          interruptions: parsed.data.interruptions,
+          sleepDebtHours: window.sleepDebtHours,
+        },
+        userId,
+      );
 
       const qualityForScaleFive = clamp(
         Math.round(prediction.qualityScore / 20),

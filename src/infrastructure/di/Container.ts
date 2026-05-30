@@ -38,7 +38,7 @@ export function createContainer(env: Env): Container {
   );
   const sleepController = new SleepController(supabaseAdmin, aiGatewayClient);
   const typingController = new TypingController(supabaseAdmin, aiGatewayClient);
-  const chatController = new ChatController(supabaseAdmin);
+  const chatController = new ChatController(supabaseAdmin, aiGatewayClient);
 
   const healthSnapshotService = new HealthSnapshotService(
     supabaseAdmin,
