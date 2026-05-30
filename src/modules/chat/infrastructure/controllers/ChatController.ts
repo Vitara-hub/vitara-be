@@ -36,18 +36,42 @@ function sanitizeTextForStorage(input: string): string {
   return normalized.length > MAX_LEN ? `${normalized.slice(0, MAX_LEN)}…` : normalized;
 }
 
-function unwrapAssistantJson(text: string): string {
+export type AssistantResponsePayload = {
+  response: string;
+  recommendations?: string[];
+};
+
+function payloadFromParsedAssistantJson(
+  parsed: Record<string, unknown>,
+): AssistantResponsePayload | null {
+  const fromAssistantMessage =
+    typeof parsed.assistantMessage === "string" ? parsed.assistantMessage : null;
+  const fromResponse = typeof parsed.response === "string" ? parsed.response : null;
+
+  if (!fromAssistantMessage && !fromResponse) {
+    return null;
+  }
+
+  const recommendations = Array.isArray(parsed.recommendations)
+    ? parsed.recommendations.filter(
+        (item): item is string => typeof item === "string" && item.length > 0,
+      )
+    : undefined;
+
+  return {
+    response: String(fromAssistantMessage ?? fromResponse ?? ""),
+    recommendations,
+  };
+}
+
+export function unwrapAssistantPayload(text: string): AssistantResponsePayload {
   const candidate = text.trim();
 
   // Direct JSON response.
   try {
     const parsed = JSON.parse(candidate) as Record<string, unknown>;
-    const fromAssistantMessage =
-      typeof parsed.assistantMessage === "string" ? parsed.assistantMessage : null;
-    const fromResponse = typeof parsed.response === "string" ? parsed.response : null;
-    if (fromAssistantMessage || fromResponse) {
-      return String(fromAssistantMessage ?? fromResponse ?? "");
-    }
+    const payload = payloadFromParsedAssistantJson(parsed);
+    if (payload) return payload;
   } catch {
     // ignore
   }
@@ -57,18 +81,18 @@ function unwrapAssistantJson(text: string): string {
   if (jsonBlockMatch) {
     try {
       const parsed = JSON.parse(jsonBlockMatch[1] ?? "{}") as Record<string, unknown>;
-      const fromAssistantMessage =
-        typeof parsed.assistantMessage === "string" ? parsed.assistantMessage : null;
-      const fromResponse = typeof parsed.response === "string" ? parsed.response : null;
-      if (fromAssistantMessage || fromResponse) {
-        return String(fromAssistantMessage ?? fromResponse ?? "");
-      }
+      const payload = payloadFromParsedAssistantJson(parsed);
+      if (payload) return payload;
     } catch {
       // ignore
     }
   }
 
-  return candidate;
+  return { response: candidate };
+}
+
+function unwrapAssistantJson(text: string): string {
+  return unwrapAssistantPayload(text).response;
 }
 
 type CompanionSseData =
@@ -202,9 +226,13 @@ function sanitizeCompanionDataEvent(data: CompanionSseData): CompanionSseData {
     return { token: sanitizeTextForStorage(data.token) };
   }
 
+  const payload = unwrapAssistantPayload(data.full_response);
+  const rawRecommendations = Array.isArray(data.recommendations)
+    ? data.recommendations
+    : payload.recommendations;
   const recs =
-    Array.isArray(data.recommendations)
-      ? data.recommendations
+    Array.isArray(rawRecommendations)
+      ? rawRecommendations
           .filter((item): item is string => typeof item === "string")
           .map((item) => sanitizeTextForStorage(item))
           .filter((item) => item.length > 0)
@@ -212,7 +240,7 @@ function sanitizeCompanionDataEvent(data: CompanionSseData): CompanionSseData {
       : undefined;
 
   return {
-    full_response: sanitizeTextForStorage(unwrapAssistantJson(data.full_response)),
+    full_response: sanitizeTextForStorage(payload.response),
     recommendations: recs,
   };
 }
