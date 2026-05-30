@@ -201,6 +201,12 @@ jobs:
           docker run -d \
             --name "$CONTAINER_NAME" \
             --restart unless-stopped \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --tmpfs /home/bun/.cache:rw,noexec,nosuid,size=64m \
+            --security-opt no-new-privileges:true \
+            --cap-drop ALL \
+            --pids-limit 256 \
             --env NODE_ENV=production \
             --env FRONTEND_URL="$FRONTEND_URL" \
             --env PORT="$APP_PORT" \
