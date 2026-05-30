@@ -201,10 +201,16 @@ Response:
     "username": "axd",
     "email": "user@mail.com",
     "fullName": "Nama User",
-    "timezone": "Asia/Jakarta"
+    "timezone": "Asia/Jakarta",
+    "imageUrl": "https://lh3.googleusercontent.com/..."
   }
 }
 ```
+
+Catatan:
+
+- `imageUrl` berisi URL avatar user bila tersedia (mis. hasil Google OAuth metadata).
+- Jika tidak tersedia, nilai `imageUrl` adalah `null`.
 
 ## Journal / Mental
 

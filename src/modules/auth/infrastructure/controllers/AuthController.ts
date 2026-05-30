@@ -83,6 +83,35 @@ export class AuthController {
     });
   }
 
+  private extractImageUrlFromAuthUser(user: {
+    user_metadata?: Record<string, unknown> | null;
+    identities?: Array<{ identity_data?: Record<string, unknown> | null }> | null;
+  }): string | null {
+    const metadata = user.user_metadata ?? {};
+    const directCandidates = [
+      metadata.avatar_url,
+      metadata.picture,
+      metadata.photoURL,
+    ];
+
+    for (const candidate of directCandidates) {
+      if (typeof candidate === "string" && candidate.trim().length > 0) {
+        return candidate;
+      }
+    }
+
+    const identities = Array.isArray(user.identities) ? user.identities : [];
+    for (const identity of identities) {
+      const identityData = identity.identity_data ?? {};
+      const fromIdentity = identityData.avatar_url;
+      if (typeof fromIdentity === "string" && fromIdentity.trim().length > 0) {
+        return fromIdentity;
+      }
+    }
+
+    return null;
+  }
+
   signup = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const parsed = signupSchema.safeParse(req.body);
@@ -345,6 +374,14 @@ export class AuthController {
         throw new NotFoundError("Profile");
       }
 
+      let imageUrl: string | null = null;
+      const { data: authData, error: authError } =
+        await this.supabase.auth.admin.getUserById(userId);
+
+      if (!authError && authData.user) {
+        imageUrl = this.extractImageUrlFromAuthUser(authData.user);
+      }
+
       res.json({
         status: "success",
         data: {
@@ -353,6 +390,7 @@ export class AuthController {
           email: typeof data.email === "string" ? data.email : null,
           fullName: typeof data.full_name === "string" ? data.full_name : null,
           timezone: typeof data.timezone === "string" ? data.timezone : "Asia/Jakarta",
+          imageUrl,
         },
       });
     } catch (err) {
