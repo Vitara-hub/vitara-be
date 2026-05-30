@@ -8,9 +8,6 @@ updates:
       time: "03:00"
       timezone: "Asia/Jakarta"
     open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "dependabot"
     commit-message:
       prefix: "deps"
     allow:
@@ -22,11 +19,8 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "03:30"
+      time: "03:00"
       timezone: "Asia/Jakarta"
     open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "dependabot"
     commit-message:
       prefix: "ci"
