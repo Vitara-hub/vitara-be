@@ -11,7 +11,16 @@ export function createExpressApp(): Express {
   const app = express();
 
   // ── Global middleware ───────────────────────────────
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          imgSrc: ["'self'", "data:", "https://lh3.googleusercontent.com"],
+        },
+      },
+    }),
+  );
   app.use(
     cors({
       origin: process.env.FRONTEND_URL || "http://localhost:5173",
