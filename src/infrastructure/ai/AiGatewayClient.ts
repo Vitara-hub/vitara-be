@@ -18,7 +18,6 @@ export interface SleepPredictionInput {
   bedtime: string;
   wakeTime: string;
   interruptions: number;
-  sleepDebtHours: number;
 }
 
 export interface SleepPrediction {
@@ -296,7 +295,6 @@ export class AiGatewayClient {
         bedtime: input.bedtime,
         wake_time: input.wakeTime,
         interruptions: input.interruptions,
-        // sleep_debt_hours: input.sleepDebtHours,
         user_id: userId,
       }),
     });

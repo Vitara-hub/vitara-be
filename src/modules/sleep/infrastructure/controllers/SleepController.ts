@@ -44,7 +44,6 @@ export class SleepController {
           bedtime: parsed.data.sleepTime,
           wakeTime: parsed.data.wakeTime,
           interruptions: parsed.data.interruptions,
-          sleepDebtHours: window.sleepDebtHours,
         },
         userId,
       );
@@ -64,7 +63,7 @@ export class SleepController {
           quality: qualityForScaleFive,
           notes: parsed.data.notes ?? null,
           ai_quality_score: prediction.qualityScore,
-          sleep_debt_hours: window.sleepDebtHours,
+          sleep_debt_hours: null,
           interruptions: parsed.data.interruptions,
         })
         .select("id")

@@ -28,7 +28,6 @@ export function deriveSleepWindow(sleepTime: string, wakeTime: string): {
   start: Date;
   end: Date;
   durationHours: number;
-  sleepDebtHours: number;
 } {
   const now = new Date();
   const year = now.getUTCFullYear();
@@ -58,12 +57,9 @@ export function deriveSleepWindow(sleepTime: string, wakeTime: string): {
     24,
   );
 
-  const sleepDebtHours = clamp(8 - durationHours, 0, 24);
-
   return {
     start,
     end,
     durationHours: Math.round(durationHours * 100) / 100,
-    sleepDebtHours: Math.round(sleepDebtHours * 100) / 100,
   };
 }
