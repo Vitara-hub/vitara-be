@@ -64,6 +64,78 @@ const DEFAULT_JOURNAL_PREDICTION: JournalPrediction = {
   topics: ["general"],
 };
 
+function toNumberOrNaN(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : NaN;
+  }
+  return NaN;
+}
+
+function normalizeTopics(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (text.length === 0) return [];
+
+    return text
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+
+  return [];
+}
+
+function parseJournalPayload(
+  payload: Record<string, unknown>,
+): JournalPrediction {
+  const emotionRaw =
+    typeof payload.emotion === "string"
+      ? payload.emotion.trim()
+      : typeof payload.sentiment === "string"
+        ? payload.sentiment.trim()
+        : "";
+
+  const stressLevelCandidates = [
+    toNumberOrNaN(payload.stress_level),
+    toNumberOrNaN(payload.stressLevel),
+    toNumberOrNaN(payload.stress),
+  ];
+  const stressLevelRaw = stressLevelCandidates.find(Number.isFinite);
+  const stressLevelValue =
+    typeof stressLevelRaw === "number"
+      ? stressLevelRaw
+      : DEFAULT_JOURNAL_PREDICTION.stressLevel;
+
+  const topicsRaw = [
+    normalizeTopics(payload.topics),
+    normalizeTopics(payload.topic),
+    normalizeTopics(payload.keywords),
+  ].find((topics) => topics.length > 0) ?? [];
+
+  return {
+    emotion:
+      emotionRaw.length > 0 ? emotionRaw : DEFAULT_JOURNAL_PREDICTION.emotion,
+    stressLevel: roundTo2(
+      clamp(
+        stressLevelValue,
+        0,
+        1,
+      ),
+    ),
+    topics:
+      topicsRaw.length > 0 ? topicsRaw : DEFAULT_JOURNAL_PREDICTION.topics,
+  };
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -236,27 +308,7 @@ export class AiGatewayClient {
       }
 
       const payload = (await response.json()) as Record<string, unknown>;
-      const emotion =
-        typeof payload.emotion === "string" && payload.emotion.length > 0
-          ? payload.emotion
-          : DEFAULT_JOURNAL_PREDICTION.emotion;
-
-      const stressLevelRaw =
-        typeof payload.stress_level === "number"
-          ? payload.stress_level
-          : DEFAULT_JOURNAL_PREDICTION.stressLevel;
-
-      const topicsRaw = Array.isArray(payload.topics)
-        ? payload.topics.filter(
-            (item): item is string => typeof item === "string" && item.length > 0,
-          )
-        : DEFAULT_JOURNAL_PREDICTION.topics;
-
-      return {
-        emotion,
-        stressLevel: roundTo2(clamp(stressLevelRaw, 0, 1)),
-        topics: topicsRaw.length > 0 ? topicsRaw : DEFAULT_JOURNAL_PREDICTION.topics,
-      };
+      return parseJournalPayload(payload);
     } catch (err) {
       this.logger.warn("Journal AI request failed. Falling back to mock response.", {
         error: err instanceof Error ? err.message : "unknown",
