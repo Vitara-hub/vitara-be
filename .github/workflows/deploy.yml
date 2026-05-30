@@ -61,10 +61,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      actions: read
       contents: read
       packages: read
-      security-events: write
     steps:
       - uses: actions/checkout@v4
 
@@ -92,25 +90,6 @@ jobs:
           echo "=== Trivy FS findings ==="
           cat trivy-fs.txt
 
-      - name: Scan repository filesystem for SARIF gate (Trivy)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          format: sarif
-          output: trivy-fs.sarif
-          severity: HIGH,CRITICAL
-          limit-severities-for-sarif: true
-          ignore-unfixed: true
-          vuln-type: os,library
-          scanners: vuln,misconfig,secret
-          exit-code: 0
-
-      - name: Upload Trivy FS SARIF
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: trivy-fs.sarif
-
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -134,24 +113,6 @@ jobs:
         run: |
           echo "=== Trivy image findings ==="
           cat trivy-image.txt
-
-      - name: Scan built image for SARIF gate (Trivy)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ghcr.io/${{ needs.build.outputs.repo_lc }}:latest
-          format: sarif
-          output: trivy-image.sarif
-          severity: HIGH,CRITICAL
-          limit-severities-for-sarif: true
-          ignore-unfixed: true
-          vuln-type: os,library
-          scanners: vuln,misconfig,secret
-          exit-code: 0
-
-      - name: Upload Trivy Image SARIF
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: trivy-image.sarif
 
       - name: Upload Trivy text reports
         uses: actions/upload-artifact@v4
