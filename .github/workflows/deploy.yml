@@ -61,6 +61,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       packages: read
       security-events: write
@@ -106,7 +107,7 @@ jobs:
           exit-code: 0
 
       - name: Upload Trivy FS SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-fs.sarif
 
@@ -148,7 +149,7 @@ jobs:
           exit-code: 0
 
       - name: Upload Trivy Image SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-image.sarif
 
