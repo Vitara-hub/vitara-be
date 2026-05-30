@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ── Stage 1: Install dependencies ───────────────────
-FROM oven/bun:1.2.15-alpine AS deps
+FROM oven/bun:1.2.21-alpine AS deps
 WORKDIR /app
 
 COPY package.json bun.lock ./
@@ -16,7 +16,7 @@ COPY src ./src
 RUN bun run build
 
 # ── Stage 3: Production runtime ─────────────────────
-FROM oven/bun:1.2.15-alpine AS runtime
+FROM oven/bun:1.2.21-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
