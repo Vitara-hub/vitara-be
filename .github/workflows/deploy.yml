@@ -84,7 +84,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           scanners: vuln,misconfig,secret
-          exit-code: 0
+          exit-code: 1
 
       - name: Show Trivy FS findings in logs
         run: |
@@ -99,10 +99,11 @@ jobs:
           format: sarif
           output: trivy-fs.sarif
           severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
           ignore-unfixed: true
           vuln-type: os,library
           scanners: vuln,misconfig,secret
-          exit-code: 1
+          exit-code: 0
 
       - name: Upload Trivy FS SARIF
         uses: github/codeql-action/upload-sarif@v3
@@ -126,7 +127,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           scanners: vuln,misconfig,secret
-          exit-code: 0
+          exit-code: 1
 
       - name: Show Trivy Image findings in logs
         run: |
@@ -140,10 +141,11 @@ jobs:
           format: sarif
           output: trivy-image.sarif
           severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
           ignore-unfixed: true
           vuln-type: os,library
           scanners: vuln,misconfig,secret
-          exit-code: 1
+          exit-code: 0
 
       - name: Upload Trivy Image SARIF
         uses: github/codeql-action/upload-sarif@v3
