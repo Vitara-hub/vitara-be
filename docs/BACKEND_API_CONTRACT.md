@@ -594,7 +594,7 @@ Query:
 
 ### `POST /api/chat/messages`
 
-Protected. Kirim pesan user, gateway memanggil AI service `POST /companion/chat`, membaca response SSE, lalu simpan user + assistant message. Jika AI companion gagal, backend memakai fallback local companion.
+Protected. Kirim pesan user, gateway memanggil AI service `POST /companion/chat`, meneruskan stream ke frontend (SSE), lalu simpan user + assistant message. Jika AI companion gagal, backend memakai fallback local companion.
 
 AI request yang dikirim backend:
 
@@ -605,10 +605,11 @@ AI request yang dikirim backend:
 }
 ```
 
-AI response yang dibaca backend:
+AI response yang diproses backend:
 
-- `event: delta` dengan `data: {"token":"..."}`
-- `event: final` dengan `data: {"full_response":"...","recommendations":[...]}`
+- Token stream: `data: {"token":"..."}`
+- Final stream: `data: {"full_response":"...","recommendations":[...]}`
+- Jika `full_response` berisi JSON (langsung atau markdown fenced) dengan struktur `{ "response": "...", "recommendations": [...] }`, backend akan unwrap `response` sebagai teks final dan mengambil `recommendations` dari payload tersebut bila field top-level belum ada.
 
 Request:
 
@@ -619,17 +620,22 @@ Request:
 }
 ```
 
-Response:
+Response `200`:
 
-```json
-{
-  "status": "success",
-  "data": {
-    "sessionId": "uuid",
-    "assistantMessage": "Aku dengar kamu lagi capek..."
-  }
-}
+- `Content-Type: text/event-stream`
+
+Contoh chunk SSE yang diterima frontend:
+
+```text
+data: {"token":"Aku dengar kamu lagi capek"}
+
+data: {"full_response":"Aku dengar kamu lagi capek...","recommendations":["Istirahat 10 menit","Minum air putih"]}
 ```
+
+Catatan:
+
+- Tidak ada envelope JSON `status/data` untuk endpoint ini karena response bersifat streaming.
+- Setelah stream selesai, backend tetap menyimpan assistant message ke database.
 
 ### `GET /api/chat/messages`
 
