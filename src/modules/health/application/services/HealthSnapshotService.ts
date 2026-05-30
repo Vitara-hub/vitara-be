@@ -19,6 +19,11 @@ export interface DailyInputs {
   sleepHours: number;
 }
 
+function normalizePercentScore(value: number | null): number | null {
+  if (value === null || !Number.isFinite(value)) return null;
+  return value <= 1 ? value * 100 : value;
+}
+
 export class HealthSnapshotService {
   constructor(
     private readonly supabase: SupabaseClient,
@@ -150,7 +155,7 @@ export class HealthSnapshotService {
       nutritionCalories: nutritionCalories > 0 ? nutritionCalories : null,
       sleepQualityScore:
         sleepRow && typeof sleepRow.ai_quality_score === "number"
-          ? clamp(sleepRow.ai_quality_score, 0, 100)
+          ? clamp(normalizePercentScore(sleepRow.ai_quality_score) ?? 0, 0, 100)
           : null,
       typingStressScore:
         typingRow && typeof typingRow.stress_score === "number"
