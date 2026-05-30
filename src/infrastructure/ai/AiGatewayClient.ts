@@ -144,83 +144,6 @@ function roundTo2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function calculateStdDev(values: number[]): number {
-  if (values.length === 0) return 0;
-  const mean = values.reduce((acc, curr) => acc + curr, 0) / values.length;
-  const variance =
-    values.reduce((acc, curr) => acc + (curr - mean) * (curr - mean), 0) /
-    values.length;
-  return Math.sqrt(variance);
-}
-
-function emotionToMoodScore(emotion: string): number {
-  const normalized = emotion.toLowerCase();
-  const map: Record<string, number> = {
-    happy: 88,
-    calm: 82,
-    neutral: 72,
-    anxious: 48,
-    stressed: 42,
-    sad: 40,
-    angry: 35,
-  };
-
-  return map[normalized] ?? 70;
-}
-
-function caloriesToNutritionScore(calories: number): number {
-  // MVP heuristic: makan utama ideal di sekitar 500-700 kkal.
-  const target = 600;
-  const tolerance = 500;
-  const delta = Math.abs(calories - target);
-  const normalized = clamp(1 - delta / tolerance, 0, 1);
-  return Math.round(45 + normalized * 55);
-}
-
-function calculateTypingFallback(input: TypingPredictionInput): TypingPrediction {
-  const wpmRisk = clamp((55 - input.wpm) / 55, 0, 1);
-  const backspaceRisk = clamp(input.backspaceRate, 0, 1);
-  const interKeyStdDev = calculateStdDev(input.interKeyTimings);
-  const rhythmRisk = clamp(interKeyStdDev / 300, 0, 1);
-
-  const stressScore = clamp(
-    0.2 + wpmRisk * 0.25 + backspaceRisk * 0.4 + rhythmRisk * 0.25,
-    0,
-    1,
-  );
-
-  return {
-    stressScore: roundTo2(stressScore),
-  };
-}
-
-function calculateHealthFallback(
-  input: HealthComputationInput,
-): HealthComputationResult {
-  const mood = emotionToMoodScore(input.emotion);
-  const nutrition = caloriesToNutritionScore(input.nutritionCalories);
-
-  const stressBlend = clamp(
-    (input.journalStressLevel + input.typingStressScore) / 2,
-    0,
-    1,
-  );
-  const stress = clamp(Math.round((1 - stressBlend) * 100), 0, 100);
-  const sleep = clamp(Math.round(input.sleepQualityScore), 0, 100);
-
-  const healthScore = Math.round((mood + nutrition + stress + sleep) / 4);
-
-  return {
-    healthScore,
-    breakdown: {
-      mood,
-      nutrition,
-      stress,
-      sleep,
-    },
-  };
-}
-
 function parseSseDataEvents(raw: string): Array<Record<string, unknown>> {
   return raw
     .split(/\n\n+/)
@@ -390,46 +313,34 @@ export class AiGatewayClient {
     userId: string,
   ): Promise<TypingPrediction> {
     const endpoint = `${this.env.AI_SERVICE_BASE_URL}/predict/typing`;
+    const response = await this.fetchWithTimeout(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        wpm: input.wpm,
+        backspace_rate: input.backspaceRate,
+        inter_key_timings: input.interKeyTimings,
+        user_id: userId,
+      }),
+    });
 
-    try {
-      const response = await this.fetchWithTimeout(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          wpm: input.wpm,
-          backspace_rate: input.backspaceRate,
-          inter_key_timings: input.interKeyTimings,
-          user_id: userId,
-        }),
-      });
-
-      if (!response.ok) {
-        this.logger.warn("Typing AI returned non-OK response. Falling back.", {
-          status: response.status,
-        });
-        return calculateTypingFallback(input);
-      }
-
-      const payload = (await response.json()) as Record<string, unknown>;
-      const stressScoreRaw =
-        typeof payload.stress_score === "number" ? payload.stress_score : NaN;
-
-      if (!Number.isFinite(stressScoreRaw)) {
-        throw new AppError("Typing AI response is invalid", 502);
-      }
-
-      return {
-        stressScore: roundTo2(clamp(stressScoreRaw, 0, 1)),
-      };
-    } catch (err) {
-      this.logger.warn("Typing AI request failed. Falling back.", {
-        error: err instanceof Error ? err.message : "unknown",
-      });
-
-      return calculateTypingFallback(input);
+    if (!response.ok) {
+      throw new AppError("Typing AI service is unavailable", 502);
     }
+
+    const payload = (await response.json()) as Record<string, unknown>;
+    const stressScoreRaw =
+      typeof payload.stress_score === "number" ? payload.stress_score : NaN;
+
+    if (!Number.isFinite(stressScoreRaw)) {
+      throw new AppError("Typing AI response is invalid", 502);
+    }
+
+    return {
+      stressScore: roundTo2(clamp(stressScoreRaw, 0, 1)),
+    };
   }
 
   async computeHealthScore(
@@ -437,84 +348,72 @@ export class AiGatewayClient {
     userId: string,
   ): Promise<HealthComputationResult> {
     const endpoint = `${this.env.AI_SERVICE_BASE_URL}/health/score`;
-
-    try {
-      const response = await this.fetchWithTimeout(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+    const response = await this.fetchWithTimeout(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        nlp_result: {
+          emotion: input.emotion,
+          stress_level: input.journalStressLevel,
         },
-        body: JSON.stringify({
-          user_id: userId,
-          nlp_result: {
-            emotion: input.emotion,
-            stress_level: input.journalStressLevel,
-          },
-          food_result: {
-            estimated_calories: input.nutritionCalories,
-          },
-          sleep_result: {
-            quality_score: input.sleepQualityScore,
-          },
-          typing_result: {
-            stress_score: input.typingStressScore,
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        this.logger.warn("Health AI returned non-OK response. Falling back.", {
-          status: response.status,
-        });
-        return calculateHealthFallback(input);
-      }
-
-      const payload = (await response.json()) as Record<string, unknown>;
-      const breakdown =
-        payload.breakdown &&
-        typeof payload.breakdown === "object" &&
-        !Array.isArray(payload.breakdown)
-          ? (payload.breakdown as Record<string, unknown>)
-          : {};
-
-      const healthScoreRaw =
-        typeof payload.health_score === "number" ? payload.health_score : NaN;
-      const moodRaw = typeof breakdown.mood === "number" ? breakdown.mood : NaN;
-      const nutritionRaw =
-        typeof breakdown.nutrition === "number" ? breakdown.nutrition : NaN;
-      const stressRaw =
-        typeof breakdown.stress === "number" ? breakdown.stress : NaN;
-      const sleepRaw =
-        typeof breakdown.sleep === "number" ? breakdown.sleep : NaN;
-
-      if (
-        ![
-          healthScoreRaw,
-          moodRaw,
-          nutritionRaw,
-          stressRaw,
-          sleepRaw,
-        ].every(Number.isFinite)
-      ) {
-        throw new AppError("Health AI response is invalid", 502);
-      }
-
-      return {
-        healthScore: clamp(Math.round(healthScoreRaw), 0, 100),
-        breakdown: {
-          mood: clamp(Math.round(moodRaw), 0, 100),
-          nutrition: clamp(Math.round(nutritionRaw), 0, 100),
-          stress: clamp(Math.round(stressRaw), 0, 100),
-          sleep: clamp(Math.round(sleepRaw), 0, 100),
+        food_result: {
+          estimated_calories: input.nutritionCalories,
         },
-      };
-    } catch (err) {
-      this.logger.warn("Health AI request failed. Falling back.", {
-        error: err instanceof Error ? err.message : "unknown",
-      });
+        sleep_result: {
+          quality_score: input.sleepQualityScore,
+        },
+        typing_result: {
+          stress_score: input.typingStressScore,
+        },
+      }),
+    });
 
-      return calculateHealthFallback(input);
+    if (!response.ok) {
+      throw new AppError("Health AI service is unavailable", 502);
     }
+
+    const payload = (await response.json()) as Record<string, unknown>;
+    const breakdown =
+      payload.breakdown &&
+      typeof payload.breakdown === "object" &&
+      !Array.isArray(payload.breakdown)
+        ? (payload.breakdown as Record<string, unknown>)
+        : {};
+
+    const healthScoreRaw =
+      typeof payload.health_score === "number" ? payload.health_score : NaN;
+    const moodRaw = typeof breakdown.mood === "number" ? breakdown.mood : NaN;
+    const nutritionRaw =
+      typeof breakdown.nutrition === "number" ? breakdown.nutrition : NaN;
+    const stressRaw =
+      typeof breakdown.stress === "number" ? breakdown.stress : NaN;
+    const sleepRaw =
+      typeof breakdown.sleep === "number" ? breakdown.sleep : NaN;
+
+    if (
+      ![
+        healthScoreRaw,
+        moodRaw,
+        nutritionRaw,
+        stressRaw,
+        sleepRaw,
+      ].every(Number.isFinite)
+    ) {
+      throw new AppError("Health AI response is invalid", 502);
+    }
+
+    return {
+      healthScore: clamp(Math.round(healthScoreRaw), 0, 100),
+      breakdown: {
+        mood: clamp(Math.round(moodRaw), 0, 100),
+        nutrition: clamp(Math.round(nutritionRaw), 0, 100),
+        stress: clamp(Math.round(stressRaw), 0, 100),
+        sleep: clamp(Math.round(sleepRaw), 0, 100),
+      },
+    };
   }
 
   async chatCompanion(
