@@ -47,11 +47,10 @@ Pastikan perangkat telah memiliki:
 - Git
 - Bun `1.2.x` atau lebih baru
 - Docker Engine / Docker Desktop
-- Supabase CLI jika ingin menjalankan Supabase stack lokal
-- Akun/project Supabase atau Supabase local stack
+- Akun/project Supabase Cloud
 - `vitara-ai-service` yang berjalan dan dapat diakses backend
 
-Secara default backend berjalan di `http://localhost:3000` dan mengharapkan AI service di `http://localhost:8000`. Frontend perlu mengakses endpoint backend dengan base path `/api`.
+Secara default backend berjalan di `http://localhost:3000`, memakai Supabase Cloud, dan mengharapkan AI service di `http://localhost:8000`. Frontend perlu mengakses endpoint backend dengan base path `/api`.
 
 ## Cara Replikasi Lokal
 
@@ -74,14 +73,14 @@ bun install
 cp .env.example .env
 ```
 
-Isi nilai berikut sesuai environment lokal atau Supabase hosted:
+Isi nilai berikut dari Supabase Cloud dashboard dan environment lokal:
 
 ```env
 PORT=3000
 NODE_ENV=development
 FRONTEND_URL=http://localhost:5173
 
-SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 SUPABASE_FOOD_BUCKET=food-images
@@ -93,15 +92,15 @@ GOOGLE_OAUTH_REDIRECT_URL=http://localhost:5173/auth/callback
 DATA_ENCRYPTION_KEY=replace-with-stable-secret
 ```
 
-4. Jalankan Supabase lokal jika tidak memakai Supabase hosted:
+4. Siapkan Supabase Cloud:
 
-```bash
-bun run sb:start
-bun run sb:status
-bun run sb:db:reset
-```
+- Buat project di Supabase Cloud.
+- Ambil `SUPABASE_URL`, `SUPABASE_ANON_KEY`, dan `SUPABASE_SERVICE_ROLE_KEY` dari Project Settings.
+- Terapkan migration di folder `supabase/migrations` ke project Supabase.
+- Pastikan bucket storage sesuai `SUPABASE_FOOD_BUCKET`, default `food-images`.
+- Jika memakai Google OAuth, konfigurasi Google provider di Supabase Auth dan set `GOOGLE_OAUTH_REDIRECT_URL`.
 
-Catatan: `docker-compose.yml` hanya menyediakan Postgres + Adminer untuk validasi SQL cepat. Untuk testing auth dan storage end-to-end, gunakan Supabase CLI.
+Catatan: Supabase CLI tetap bisa dipakai untuk development lokal penuh jika dibutuhkan, tetapi README ini menggunakan Supabase Cloud sebagai jalur utama agar auth, database, dan storage konsisten dengan deployment.
 
 5. Jalankan `vitara-ai-service` pada host yang sama atau sesuaikan `AI_SERVICE_BASE_URL`.
 
@@ -183,7 +182,7 @@ Prasyarat EC2:
 - Instance EC2 dapat diakses via SSH dari GitHub Actions.
 - Docker sudah terpasang dan user deploy punya akses menjalankan Docker.
 - Security group membuka port aplikasi yang dipakai, default `3000`.
-- Supabase hosted atau service eksternal lain dapat diakses dari EC2.
+- Supabase Cloud atau service eksternal lain dapat diakses dari EC2.
 - `vitara-ai-service` sudah tersedia dari EC2 melalui `AI_SERVICE_BASE_URL`.
 
 GitHub repository secrets yang dibutuhkan:
@@ -240,7 +239,7 @@ Ganti `<owner>/<repo>` sesuai nama repository GitHub dalam huruf kecil.
 │   └── migrations/             # Migration database dan storage
 ├── tests/                      # Unit dan integration-style tests
 ├── Dockerfile                  # Multi-stage production image
-├── docker-compose.yml          # Postgres + Adminer untuk validasi SQL lokal
+├── docker-compose.yml          # Postgres + Adminer opsional untuk validasi SQL lokal
 ├── package.json                # Script Bun dan dependency
 └── tsconfig*.json              # Konfigurasi TypeScript
 ```
@@ -290,9 +289,14 @@ AI_REQUEST_TIMEOUT_MS=8000
 
 Pastikan bucket Supabase Storage sesuai `SUPABASE_FOOD_BUCKET` sudah ada dan migration storage sudah diterapkan. Default bucket adalah `food-images`.
 
-### Supabase lokal tidak berjalan
+### Koneksi ke Supabase Cloud gagal
 
-Pastikan Docker aktif, lalu jalankan:
+- Pastikan `SUPABASE_URL` memakai URL project Supabase Cloud yang benar.
+- Pastikan `SUPABASE_ANON_KEY` dan `SUPABASE_SERVICE_ROLE_KEY` berasal dari project yang sama.
+- Pastikan migration sudah diterapkan ke database Supabase Cloud.
+- Pastikan bucket storage `food-images` atau bucket sesuai `SUPABASE_FOOD_BUCKET` sudah tersedia.
+
+### Ingin memakai Supabase lokal
 
 ```bash
 bun run sb:start
@@ -323,7 +327,7 @@ Pastikan port, env Supabase, dan koneksi ke AI service sudah benar.
 - `bun run lint`: menjalankan ESLint.
 - `bun run lint:fix`: menjalankan ESLint dengan autofix.
 - `bun run test`: menjalankan test Bun.
-- `bun run sb:start`: menjalankan Supabase local stack.
-- `bun run sb:stop`: menghentikan Supabase local stack.
-- `bun run sb:status`: melihat status Supabase local stack.
-- `bun run sb:db:reset`: reset database Supabase lokal dan apply migration.
+- `bun run sb:start`: menjalankan Supabase local stack opsional.
+- `bun run sb:stop`: menghentikan Supabase local stack opsional.
+- `bun run sb:status`: melihat status Supabase local stack opsional.
+- `bun run sb:db:reset`: reset database Supabase lokal opsional dan apply migration.
